@@ -36,12 +36,14 @@ import net.dv8tion.jda.core.hooks.ListenerAdapter
 import java.io.File
 import java.time.LocalDateTime
 
+val jsonFactory = JacksonFactory.getDefaultInstance()
+
 const val youtubeBaseUrl = "https://www.youtube.com/watch?v="
 const val botPrefix = "l!"
 val mentionSpammers = mutableMapOf<Member, Pair<Int, Long>>()
 
 @Suppress("UNCHECKED_CAST")
-val savedUserText: MutableMap<String, MutableMap<String, String>> = try {JSONParser.parse(File("savedUserText.json")) as JSONObject} catch(e: Exception) {JSONObject()} as MutableMap<String, MutableMap<String, String>>
+val savedUserText: MutableMap<String, MutableMap<String, String>> = try {jsonFactory.fromString(File("savedUserText.json").readText(), LinkedHashMap::class.java) as MutableMap<String, MutableMap<String, String>>} catch(e: Exception) {mutableMapOf()}
 
 val playerManager = DefaultAudioPlayerManager()
 val joinedGuilds = mutableMapOf<Guild, GuildInfo>()
@@ -52,7 +54,6 @@ var shutdownMode = ExitMode.SHUTDOWN
 
 fun getYoutubeService(): YouTube
 {
-    val jsonFactory = JacksonFactory.getDefaultInstance()
     val httpTransport = GoogleNetHttpTransport.newTrustedTransport()
     val secret = GoogleClientSecrets.load(jsonFactory, File("client_secret.json").reader())
     val flow = GoogleAuthorizationCodeFlow.Builder(httpTransport, jsonFactory, secret, listOf(YouTubeScopes.YOUTUBE_READONLY)).setDataStoreFactory(FileDataStoreFactory(File("credentials/youtube_api"))).setAccessType("offline").build()
@@ -87,7 +88,7 @@ fun save()
         "${guild.id}:${guildInfo.serverAdminRoles.joinToString(",") {it.id}}:${guildInfo.initialRole?.id}:${guildInfo.rulesChannel?.id},${guildInfo.welcomeMessageChannel?.id},${guildInfo.userLeaveChannel?.id},${guildInfo.userBannedChannel?.id},${guildInfo.botLogChannel?.id},${guildInfo.musicChannel?.id},${guildInfo.welcomeChannel?.id}"
     }.joinToString("\n")
     File("guildSaveData.txt").writeText(guildSaveData)
-    File("savedUserText.json").writeText(savedUserText.toString())
+    File("savedUserText.json").writeText(jsonFactory.toPrettyString(savedUserText))
 }
 
 fun clearWelcomeReactionsBy(guild: Guild, user: User)
