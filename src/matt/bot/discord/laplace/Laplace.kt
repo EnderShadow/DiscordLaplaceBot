@@ -11,12 +11,9 @@ import com.google.api.services.youtube.YouTube
 import com.google.api.services.youtube.YouTubeScopes
 import com.sedmelluq.discord.lavaplayer.player.DefaultAudioPlayerManager
 import com.sedmelluq.discord.lavaplayer.source.AudioSourceManagers
-import json.JSONObject
-import json.JSONParser
 import net.dv8tion.jda.core.AccountType
 import net.dv8tion.jda.core.JDABuilder
 import net.dv8tion.jda.core.MessageBuilder
-import net.dv8tion.jda.core.audit.ActionType
 import net.dv8tion.jda.core.entities.ChannelType
 import net.dv8tion.jda.core.entities.Guild
 import net.dv8tion.jda.core.entities.Member
@@ -36,7 +33,7 @@ import net.dv8tion.jda.core.hooks.ListenerAdapter
 import java.io.File
 import java.time.LocalDateTime
 
-val jsonFactory = JacksonFactory.getDefaultInstance()
+val jsonFactory: JacksonFactory = JacksonFactory.getDefaultInstance()
 
 const val youtubeBaseUrl = "https://www.youtube.com/watch?v="
 const val botPrefix = "l!"

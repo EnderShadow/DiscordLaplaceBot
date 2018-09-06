@@ -5,7 +5,6 @@ import com.sedmelluq.discord.lavaplayer.player.AudioLoadResultHandler
 import com.sedmelluq.discord.lavaplayer.tools.FriendlyException
 import com.sedmelluq.discord.lavaplayer.track.AudioPlaylist
 import com.sedmelluq.discord.lavaplayer.track.AudioTrack
-import json.JSONObject
 import net.dv8tion.jda.core.MessageBuilder
 import net.dv8tion.jda.core.entities.Guild
 import net.dv8tion.jda.core.entities.Message
@@ -35,7 +34,7 @@ fun runCommand(command: String, tokenizer: Tokenizer, sourceMessage: Message)
                         return
                     val value = tokenizer.remainingTextAsToken.tokenValue
                     @Suppress("UNCHECKED_CAST")
-                    savedUserText.getOrPut(sourceMessage.author.id) {JSONObject() as MutableMap<String, String>}[key] = value
+                    savedUserText.getOrPut(sourceMessage.author.id) {mutableMapOf()}[key] = value
                     sourceMessage.channel.sendMessage("Text saved successfully").complete()
                     save()
                 }
