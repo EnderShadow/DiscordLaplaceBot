@@ -5,6 +5,7 @@ import com.sedmelluq.discord.lavaplayer.player.event.AudioEventAdapter
 import com.sedmelluq.discord.lavaplayer.track.AudioTrack
 import com.sedmelluq.discord.lavaplayer.track.AudioTrackEndReason
 import net.dv8tion.jda.core.entities.Guild
+import java.time.Duration
 
 import java.util.concurrent.LinkedBlockingQueue
 
@@ -18,6 +19,8 @@ class TrackScheduler
 (private val guild: Guild, private val player: AudioPlayer) : AudioEventAdapter()
 {
     private val queue = LinkedBlockingQueue<AudioTrack>()
+    val durationSeconds
+        get() = (queue.map {it.duration}.sum() + (player.playingTrack?.let {it.duration - it.position} ?: 0)) / 1000.0
     
     /**
      * Add the next track to queue or play right away if nothing is in the queue.
@@ -33,6 +36,15 @@ class TrackScheduler
         {
             queue.offer(track)
         }
+        else
+        {
+            joinedGuilds[guild]!!.musicChannel?.sendMessage("Now playing ${track.info.title}")?.complete()
+        }
+    }
+    
+    fun restartSong()
+    {
+        player.playingTrack.position = 0
     }
     
     fun remove(index: Int)

@@ -7,10 +7,11 @@ fun toToken(botPrefix: String, textUnit: String): Token
 {
     return when
     {
-        textUnit.startsWith(botPrefix) -> Token(TokenType.COMMAND, textUnit.substring(botPrefix.length))
-        textUnit.matches(Regex("<@[0-9]+>")) -> Token(TokenType.USER, textUnit.substring(2, textUnit.length - 1))
-        textUnit.matches(Regex("<@&[0-9]+>")) -> Token(TokenType.ROLE, textUnit.substring(3, textUnit.length - 1))
-        textUnit.matches(Regex("<#[0-9]+>")) -> Token(TokenType.TEXT_CHANNEL, textUnit.substring(2, textUnit.length - 1))
+        textUnit.startsWith(botPrefix) -> Token(TokenType.COMMAND, textUnit.substring(botPrefix.length), textUnit)
+        textUnit.matches(Regex("<@[0-9]+>")) -> Token(TokenType.USER, textUnit.substring(2, textUnit.length - 1), textUnit)
+        textUnit.matches(Regex("<@&[0-9]+>")) -> Token(TokenType.ROLE, textUnit.substring(3, textUnit.length - 1), textUnit)
+        textUnit.matches(Regex("<#[0-9]+>")) -> Token(TokenType.TEXT_CHANNEL, textUnit.substring(2, textUnit.length - 1), textUnit)
+        textUnit.matches(Regex("[0-9]+-[0-9]+")) -> Token(TokenType.RANGE, textUnit)
         else -> {
             if(textUnit.matches(numberRegex))
                 Token(TokenType.NUMBER, textUnit)
@@ -154,9 +155,25 @@ class Tokenizer(text: String): Iterator<Token>
     }
 }
 
-data class Token(val tokenType: TokenType, val tokenValue: String)
+data class Token(val tokenType: TokenType, val tokenValue: String, val rawValue: String = tokenValue)
+{
+    val objValue = when(tokenType)
+    {
+    
+        TokenType.COMMAND -> null
+        TokenType.USER -> bot.getUserById(tokenValue)
+        TokenType.ROLE -> bot.getRoleById(tokenValue)
+        TokenType.TEXT_CHANNEL -> bot.getTextChannelById(tokenValue)
+        TokenType.TEXT -> null
+        TokenType.NUMBER -> tokenValue.toLongOrNull() ?: tokenValue.toDouble()
+        TokenType.RANGE -> {
+            val nums = tokenValue.split("-")
+            nums[0].toLong()..nums[1].toLong()
+        }
+    }
+}
 
 enum class TokenType
 {
-    COMMAND, USER, ROLE, TEXT_CHANNEL, TEXT, NUMBER
+    COMMAND, USER, ROLE, TEXT_CHANNEL, TEXT, NUMBER, RANGE
 }

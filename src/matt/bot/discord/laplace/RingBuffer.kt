@@ -1,64 +1,34 @@
 package matt.bot.discord.laplace
 
-class RingBuffer<T>(size: Int): Iterable<T>
+import java.lang.IllegalArgumentException
+import java.util.*
+
+class RingBuffer<T>(private val capacity: Int)
 {
-    private val data: Array<T>
-    private val mask: Int
-    private var writeIndex = 0
-    
-    var size = 0
-        private set
-    val maxSize
-        get() = data.size
+    private val backingStorage = LinkedList<T>()
     
     init
     {
-        @Suppress("UNCHECKED_CAST")
-        if(size > 0 && (size and (size - 1)) == 0)
-            data = arrayOfNulls<Any>(size) as Array<T>
-        else
-            throw IllegalArgumentException("Cannot use a negative size or a size that is not a power of 2")
-        
-        mask = size - 1
+        if(capacity < 1)
+            throw IllegalArgumentException("capacity must be at least 1")
     }
     
-    fun add(element: T)
+    fun add(obj: T)
     {
-        data[writeIndex] = element
-        writeIndex = (writeIndex + 1) and mask
-        if(size < data.size)
-            size++
+        backingStorage.add(obj)
+        if(backingStorage.size > capacity)
+            backingStorage.removeFirst()
     }
     
-    fun update(element: T, equalityFunction: (T, T) -> Boolean)
+    fun update(obj: T, equalityFunction: (T, T) -> Boolean)
     {
-        for(i in 0 until size)
-        {
-            if(equalityFunction.invoke(element, data[i]))
-            {
-                data[i] = element
-                return
-            }
-        }
+        val index = backingStorage.indexOfFirst {equalityFunction(obj, it)}
+        if(index < 0)
+            throw IllegalArgumentException("obj must be in the buffer in order to update it")
+        backingStorage[index] = obj
     }
     
-    override fun iterator(): Iterator<T>
-    {
-        return RingBufferIterator()
-    }
+    fun remove(obj: T) = backingStorage.remove(obj)
     
-    inner class RingBufferIterator: Iterator<T>
-    {
-        private var index = (writeIndex - size) and mask
-        
-        override fun hasNext() = index != writeIndex
-        
-        override fun next(): T
-        {
-            if(hasNext())
-                return data[index++ and mask]
-            else
-                throw NoSuchElementException()
-        }
-    }
+    fun asList() = backingStorage.toList()
 }

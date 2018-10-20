@@ -1,6 +1,5 @@
 package matt.bot.discord.laplace
 
-import com.google.api.services.youtube.YouTube
 import com.sedmelluq.discord.lavaplayer.player.AudioLoadResultHandler
 import com.sedmelluq.discord.lavaplayer.tools.FriendlyException
 import com.sedmelluq.discord.lavaplayer.track.AudioPlaylist
@@ -9,6 +8,8 @@ import net.dv8tion.jda.core.MessageBuilder
 import net.dv8tion.jda.core.entities.Guild
 import net.dv8tion.jda.core.entities.Message
 import net.dv8tion.jda.core.entities.VoiceChannel
+import java.lang.StringBuilder
+import kotlin.math.min
 
 val urlRegex = Regex("^(https?|ftp|file)://[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*[-a-zA-Z0-9+&@#/%=~_|]")
 
@@ -62,7 +63,10 @@ fun runCommand(command: String, tokenizer: Tokenizer, sourceMessage: Message)
                     if(textMap.isEmpty())
                         sourceMessage.channel.sendMessage("You don't have any text saved").complete()
                     else
-                        sourceMessage.channel.sendMessage("Here is what you have saved\n\n${textMap.entries.joinToString("\n") {"${it.key}: ${sanitize(it.value)}"}}").complete()
+                    {
+                        val text = splitAt2000("Here is what you have saved\n\n${textMap.entries.joinToString("\n") {"${it.key}: ${sanitize(it.value)}"}}")
+                        text.forEach {sourceMessage.channel.sendMessage(it).complete()}
+                    }
                 }
                 "play" -> {
                     if(!tokenizer.hasNext())
@@ -78,24 +82,63 @@ fun runCommand(command: String, tokenizer: Tokenizer, sourceMessage: Message)
             }
         }
         "play" -> loadAndPlay(sourceMessage, if(tokenizer.hasNext()) tokenizer.remainingTextAsToken.tokenValue else null)
+        "restart" -> joinedGuilds[sourceMessage.guild]!!.musicManager.scheduler.restartSong()
         "queue" -> {
             val musicManager = joinedGuilds[sourceMessage.guild]!!.musicManager
-            val currentlyPlaying = musicManager.player.playingTrack?.let {"0 (Currently Playing): ${it.info.title}\n"} ?: ""
-            if(musicManager.scheduler.numSongs() > 0 || currentlyPlaying.isNotBlank())
-                sourceMessage.channel.sendMessage("Here are the queued songs.\n\n$currentlyPlaying${musicManager.scheduler.getQueuedSongs()}").complete()
+            if(tokenizer.hasNext() && tokenizer.remainingTextAsToken.tokenValue.equals("duration", true))
+            {
+                val stringBuilder = StringBuilder()
+                val duration = musicManager.scheduler.durationSeconds
+                val hours = duration.toInt() / 3600
+                val minutes = (duration.toInt() / 60) % 60
+                val seconds = duration.toInt() - hours * 3600 - minutes * 60
+                if(hours == 1)
+                    stringBuilder.append("1 hour ")
+                else if(hours > 1)
+                    stringBuilder.append("$hours hours ")
+                if(minutes == 1)
+                    stringBuilder.append("1 minute ")
+                else(minutes > 1)
+                    stringBuilder.append("$minutes minutes ")
+                if(stringBuilder.isNotEmpty())
+                    stringBuilder.append("and ")
+                if(seconds == 1)
+                    stringBuilder.append("1 second")
+                else
+                    stringBuilder.append("$seconds seconds")
+                sourceMessage.channel.sendMessage("The queue is $stringBuilder long").complete()
+            }
+            else if(tokenizer.hasNext() && tokenizer.remainingTextAsToken.tokenValue.equals("length", true))
+            {
+                sourceMessage.channel.sendMessage("The queue contains ${musicManager.scheduler.numSongs()} songs.").complete()
+            }
             else
-                sourceMessage.channel.sendMessage("There are no queued songs.").complete()
+            {
+                val currentlyPlaying = musicManager.player.playingTrack?.let {"0 (Currently Playing): ${it.info.title}\n"} ?: ""
+                if(musicManager.scheduler.numSongs() > 0 || currentlyPlaying.isNotBlank())
+                {
+                    val text = splitAt2000("Here are the queued songs.\n\n$currentlyPlaying${musicManager.scheduler.getQueuedSongs()}")
+                    text.forEach {sourceMessage.channel.sendMessage(it).queue()}
+                }
+                else
+                    sourceMessage.channel.sendMessage("There are no queued songs.").complete()
+            }
         }
         "pause" -> joinedGuilds[sourceMessage.guild]!!.musicManager.scheduler.pause()
         "stop" -> stopMusic(sourceMessage.guild)
         "skip" -> {
             if(tokenizer.hasNext())
             {
-                val index = tokenizer.remainingTextAsToken.tokenValue.toIntOrNull()
-                if(index == null || index < -1 || index > joinedGuilds[sourceMessage.guild]!!.musicManager.scheduler.numSongs())
-                    sourceMessage.channel.sendMessage("${tokenizer.remainingTextAsToken.tokenValue} is not a valid track number")
-                else
-                    skipTrack(sourceMessage.guild, index - 1)
+                val nextTokens = mutableListOf<Token>()
+                while(tokenizer.hasNext())
+                    nextTokens.add(tokenizer.next())
+                val ranges = nextTokens.asSequence().filter {it.objValue is LongRange}.map {it.objValue as LongRange}.toList()
+                var indices = nextTokens.asSequence().filter {it.objValue is Number}.map {(it.objValue as Number).toLong()}.toList()
+                indices = (indices + ranges.flatMap {it.toList()}).asSequence().toSet().sortedDescending()
+                indices.forEachIndexed {i, index ->
+                    if(index >= -1 && index <= joinedGuilds[sourceMessage.guild]!!.musicManager.scheduler.numSongs())
+                        skipTrack(sourceMessage.guild, index.toInt() - 1, i != 0)
+                }
             }
             else
                 skipTrack(sourceMessage.guild, -1)
@@ -114,7 +157,9 @@ fun runCommand(command: String, tokenizer: Tokenizer, sourceMessage: Message)
                 if(tts)
                     content = content.substring(0, content.length - 4).trim()
                 MessageBuilder(content).sendTo(sourceMessage.channel).tts(tts).complete()
+                joinedGuilds[sourceMessage.guild]!!.messageBuffer.remove(sourceMessage)
                 sourceMessage.delete().complete()
+                println("${sourceMessage.author.name} made me say \"$content\"")
             }
         }
         "initialRole" -> {
@@ -197,9 +242,9 @@ fun runCommand(command: String, tokenizer: Tokenizer, sourceMessage: Message)
             if(!tokenizer.hasNext())
             {
                 if(isServerAdmin(sourceMessage.member))
-                    MessageBuilder("Known commands: `help, whoami, saved, play, queue, pause, stop, skip, volume, say, initialRole, channel, admin`").sendTo(sourceMessage.channel).complete()
+                    MessageBuilder("Known commands: `help, whoami, saved, play, restart, queue, pause, stop, skip, volume, say, initialRole, channel, admin`").sendTo(sourceMessage.channel).complete()
                 else
-                    MessageBuilder("Known commands: `help, whoami, saved, play, queue, pause, stop, skip, volume`").sendTo(sourceMessage.channel).complete()
+                    MessageBuilder("Known commands: `help, whoami, saved, play, restart, queue, pause, stop, skip, volume`").sendTo(sourceMessage.channel).complete()
             }
             else
             {
@@ -209,10 +254,11 @@ fun runCommand(command: String, tokenizer: Tokenizer, sourceMessage: Message)
                     "whoami" -> MessageBuilder("```whoami \n\tTells you who you are```")
                     "saved" -> MessageBuilder("```saved (set|get|remove|list|play) [key] [text] \n\tSets the saved key to the given text, gets what's saved with the key, removes what's saved with the key, lists all saved keys and associated text, or plays what's saved with the key```")
                     "play" -> MessageBuilder("```play [URL] \n\tPlays the song at the url or unpauses the player if not url is given```")
-                    "queue" -> MessageBuilder("```queue \n\tLists the currently queued songs```")
+                    "restart" -> MessageBuilder("```restart \n\tRestarts the currently playing song```")
+                    "queue" -> MessageBuilder("```queue [duration] \n\tLists the currently queued songs or the duration of the songs in the queue```")
                     "pause" -> MessageBuilder("```pause \n\tPauses the player```")
                     "stop" -> MessageBuilder("```stop \n\tStops playing music and clears the queue")
-                    "skip" -> MessageBuilder("```skip [index] \n\tSkips the currently playing song or removes the song at the index which can be obtained from the queue command. If -1 is used as the index, then the last added song is removed```")
+                    "skip" -> MessageBuilder("```skip (index|range)* \n\tSkips the currently playing song or removes the songs at the indices and ranges which can be obtained from the queue command. If -1 is used as the index, then the last added song is removed```")
                     "volume" -> MessageBuilder("```volume [0-200] \n\tDisplays or sets the volume of the bot```")
                     "say" -> MessageBuilder("```say MESSAGE [!tts] \n\tMakes the bot say MESSAGE (with tts if the message ends with !tts) \n\tRequires admin```")
                     "initialRole" -> MessageBuilder("```initialRole [role] \n\tSets the role that a user gets upon joining a guild once they react to the welcome message in the welcome channel```")
@@ -224,6 +270,17 @@ fun runCommand(command: String, tokenizer: Tokenizer, sourceMessage: Message)
             }
         }
     }
+}
+
+private fun splitAt2000(text: String): List<String>
+{
+    if(text.length <= 2000)
+        return listOf(text)
+    val splitIndex = text.lastIndexOf('\n', 2000)
+    return if(splitIndex < 0)
+        listOf(text.substring(0, 2000)) + splitAt2000(text.substring(2000))
+    else
+        listOf(text.substring(0, splitIndex)) + splitAt2000(text.substring(splitIndex))
 }
 
 fun loadAndPlay(sourceMessage: Message, trackUrl: String?)
@@ -322,9 +379,10 @@ fun stopMusic(guild: Guild)
     joinedGuilds[guild]!!.musicChannel?.sendMessage("Stopping music")?.queue()
 }
 
-fun skipTrack(guild: Guild, trackIndex: Int)
+fun skipTrack(guild: Guild, trackIndex: Int, suppressMessage: Boolean = false)
 {
-    joinedGuilds[guild]!!.musicChannel?.sendMessage("Skipping track")?.queue()
+    if(!suppressMessage)
+        joinedGuilds[guild]!!.musicChannel?.sendMessage("Skipping track(s)")?.queue()
     
     val musicManager = joinedGuilds[guild]!!.musicManager
     if(trackIndex == -1)

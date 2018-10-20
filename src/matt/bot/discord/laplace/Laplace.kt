@@ -12,6 +12,7 @@ import com.google.api.services.youtube.YouTubeScopes
 import com.sedmelluq.discord.lavaplayer.player.DefaultAudioPlayerManager
 import com.sedmelluq.discord.lavaplayer.source.AudioSourceManagers
 import net.dv8tion.jda.core.AccountType
+import net.dv8tion.jda.core.JDA
 import net.dv8tion.jda.core.JDABuilder
 import net.dv8tion.jda.core.MessageBuilder
 import net.dv8tion.jda.core.entities.ChannelType
@@ -24,6 +25,7 @@ import net.dv8tion.jda.core.events.guild.GuildJoinEvent
 import net.dv8tion.jda.core.events.guild.GuildLeaveEvent
 import net.dv8tion.jda.core.events.guild.member.GuildMemberJoinEvent
 import net.dv8tion.jda.core.events.guild.member.GuildMemberLeaveEvent
+import net.dv8tion.jda.core.events.guild.member.GuildMemberRoleAddEvent
 import net.dv8tion.jda.core.events.message.MessageReceivedEvent
 import net.dv8tion.jda.core.events.message.guild.GuildMessageDeleteEvent
 import net.dv8tion.jda.core.events.message.guild.GuildMessageReceivedEvent
@@ -34,6 +36,8 @@ import java.io.File
 import java.time.LocalDateTime
 
 val jsonFactory: JacksonFactory = JacksonFactory.getDefaultInstance()
+lateinit var bot: JDA
+    private set
 
 const val youtubeBaseUrl = "https://www.youtube.com/watch?v="
 const val botPrefix = "l!"
@@ -61,7 +65,7 @@ fun getYoutubeService(): YouTube
 fun main(args: Array<String>)
 {
     val token = File("token").readText()
-    val bot = JDABuilder(AccountType.BOT)
+    bot = JDABuilder(AccountType.BOT)
             .setToken(token)
             .addEventListener(UtilityListener(), MessageListener())
             .buildBlocking()
@@ -156,7 +160,7 @@ class UtilityListener: ListenerAdapter()
         val rulesChannel = guildInfo.rulesChannel
         if(sendToChannel == null)
             return
-        if(guildInfo.initialRole != null && guildInfo.welcomeChannel != null)
+        if(guildInfo.initialRole != null)
             return
         
         if(rulesChannel == null)
@@ -188,7 +192,7 @@ class UtilityListener: ListenerAdapter()
     {
         val guildInfo = joinedGuilds[event.guild]!!
         val messageBuffer = guildInfo.messageBuffer
-        val messages = messageBuffer.iterator().asSequence().filter {it.id == event.messageId}.toList()
+        val messages = messageBuffer.asList().filter {it.id == event.messageId}
         if(messages.isEmpty())
             return
         
@@ -219,14 +223,15 @@ class UtilityListener: ListenerAdapter()
         {
             val role = joinedGuilds[event.guild]!!.initialRole
             if(role != null)
-            {
-                val hasRoles = event.member.roles.isEmpty()
                 event.guild.controller.addSingleRoleToMember(event.member, role).complete()
-                val sendToChannel = joinedGuilds[event.guild]!!.welcomeMessageChannel
-                if(sendToChannel != null && !hasRoles)
-                    MessageBuilder("Welcome ${event.member.asMention} to my dominion!").sendTo(sendToChannel).complete()
-            }
         }
+    }
+    
+    override fun onGuildMemberRoleAdd(event: GuildMemberRoleAddEvent)
+    {
+        val role = joinedGuilds[event.guild]!!.initialRole
+        if(role in event.roles)
+            joinedGuilds[event.guild]!!.welcomeMessageChannel?.sendMessage("Welcome ${event.member.asMention} to my dominion!")?.complete()
     }
 }
 

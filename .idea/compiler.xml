@@ -9,7 +9,7 @@
         <module name="Laplace Bot" />
       </profile>
     </annotationProcessing>
-    <bytecodeTargetLevel>
+    <bytecodeTargetLevel target="8">
       <module name="Laplace Bot" target="1.5" />
     </bytecodeTargetLevel>
   </component>
