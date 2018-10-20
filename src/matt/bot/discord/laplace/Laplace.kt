@@ -111,9 +111,9 @@ class UtilityListener: ListenerAdapter()
         // loads saved guild info
         event.jda.guilds.forEach {joinedGuilds.putIfAbsent(it, GuildInfo(it))}
         
-        File("guildSaveData.txt").readLines().map {it.split(":")}.filter {it[0] in joinedGuilds.keys.map {it.id}}.forEach {
+        File("guildSaveData.txt").readLines().asSequence().map {it.split(":")}.filter {it[0] in joinedGuilds.keys.map {it.id}}.toList().forEach {
             val guildInfo = joinedGuilds[event.jda.getGuildById(it[0])]!!
-            guildInfo.serverAdminRoles.addAll(it[1].split(",").filter {it.isNotBlank()}.map {guildInfo.guild.getRoleById(it)}.filter {it != null})
+            guildInfo.serverAdminRoles.addAll(it[1].split(",").asSequence().filter {it.isNotBlank()}.map {guildInfo.guild.getRoleById(it)}.filter {it != null}.toList())
             if(it[2] != "null")
                 guildInfo.initialRole = guildInfo.guild.getRoleById(it[2])
             val messageChannels = it[3].split(",").map {if(it != "null") guildInfo.guild.getTextChannelById(it) else null}

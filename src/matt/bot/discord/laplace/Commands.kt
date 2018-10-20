@@ -8,8 +8,7 @@ import net.dv8tion.jda.core.MessageBuilder
 import net.dv8tion.jda.core.entities.Guild
 import net.dv8tion.jda.core.entities.Message
 import net.dv8tion.jda.core.entities.VoiceChannel
-import java.lang.StringBuilder
-import kotlin.math.min
+import kotlin.reflect.full.isSubclassOf
 
 val urlRegex = Regex("^(https?|ftp|file)://[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*[-a-zA-Z0-9+&@#/%=~_|]")
 
@@ -18,10 +17,45 @@ fun runCommand(command: String, tokenizer: Tokenizer, sourceMessage: Message)
     if(!sourceMessage.channelType.isGuild)
         return
     
-    when(command)
+    Command[command](tokenizer, sourceMessage)
+}
+
+@Suppress("unused")
+sealed class Command(val prefix: String)
+{
+    companion object
     {
-        "whoami" -> MessageBuilder("You are ${sourceMessage.member}").sendTo(sourceMessage.channel).complete()
-        "saved" -> {
+        val commands = mutableMapOf<String, Command>()
+        val noopCommand: Command
+        
+        init
+        {
+            Command::class.nestedClasses.asSequence().filter {it.isSubclassOf(Command::class)}.map {it.constructors.first().call() as Command}.forEach {commands[it.prefix] = it}
+            noopCommand = commands["noop"]!!
+        }
+        
+        operator fun get(prefix: String) = commands.getOrDefault(prefix, noopCommand)
+    }
+    
+    abstract operator fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
+    
+    class NoopCommand: Command("noop")
+    {
+        override fun invoke(tokenizer: Tokenizer, sourceMessage: Message) {}
+    }
+    
+    class WhoAmI: Command("whoami")
+    {
+        override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
+        {
+            sourceMessage.channel.sendMessage("You are ${sourceMessage.member.effectiveName}").queue()
+        }
+    }
+    
+    class Saved: Command("saved")
+    {
+        override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
+        {
             if(!tokenizer.hasNext())
                 return
             val savedMode = tokenizer.next().tokenValue
@@ -81,9 +115,22 @@ fun runCommand(command: String, tokenizer: Tokenizer, sourceMessage: Message)
                 }
             }
         }
-        "play" -> loadAndPlay(sourceMessage, if(tokenizer.hasNext()) tokenizer.remainingTextAsToken.tokenValue else null)
-        "restart" -> joinedGuilds[sourceMessage.guild]!!.musicManager.scheduler.restartSong()
-        "queue" -> {
+    }
+    
+    class Play: Command("play")
+    {
+        override fun invoke(tokenizer: Tokenizer, sourceMessage: Message) = loadAndPlay(sourceMessage, if(tokenizer.hasNext()) tokenizer.remainingTextAsToken.tokenValue else null)
+    }
+    
+    class Restart: Command("restart")
+    {
+        override fun invoke(tokenizer: Tokenizer, sourceMessage: Message) = joinedGuilds[sourceMessage.guild]!!.musicManager.scheduler.restartSong()
+    }
+    
+    class Queue: Command("queue")
+    {
+        override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
+        {
             val musicManager = joinedGuilds[sourceMessage.guild]!!.musicManager
             if(tokenizer.hasNext() && tokenizer.remainingTextAsToken.tokenValue.equals("duration", true))
             {
@@ -99,7 +146,7 @@ fun runCommand(command: String, tokenizer: Tokenizer, sourceMessage: Message)
                 if(minutes == 1)
                     stringBuilder.append("1 minute ")
                 else(minutes > 1)
-                    stringBuilder.append("$minutes minutes ")
+                stringBuilder.append("$minutes minutes ")
                 if(stringBuilder.isNotEmpty())
                     stringBuilder.append("and ")
                 if(seconds == 1)
@@ -124,9 +171,22 @@ fun runCommand(command: String, tokenizer: Tokenizer, sourceMessage: Message)
                     sourceMessage.channel.sendMessage("There are no queued songs.").complete()
             }
         }
-        "pause" -> joinedGuilds[sourceMessage.guild]!!.musicManager.scheduler.pause()
-        "stop" -> stopMusic(sourceMessage.guild)
-        "skip" -> {
+    }
+    
+    class Pause: Command("pause")
+    {
+        override fun invoke(tokenizer: Tokenizer, sourceMessage: Message) = joinedGuilds[sourceMessage.guild]!!.musicManager.scheduler.pause()
+    }
+    
+    class Stop: Command("stop")
+    {
+        override fun invoke(tokenizer: Tokenizer, sourceMessage: Message) = stopMusic(sourceMessage.guild)
+    }
+    
+    class Skip: Command("skip")
+    {
+        override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
+        {
             if(tokenizer.hasNext())
             {
                 val nextTokens = mutableListOf<Token>()
@@ -143,13 +203,23 @@ fun runCommand(command: String, tokenizer: Tokenizer, sourceMessage: Message)
             else
                 skipTrack(sourceMessage.guild, -1)
         }
-        "volume" -> {
+    }
+    
+    class Volume: Command("volume")
+    {
+        override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
+        {
             if(tokenizer.hasNext())
                 tokenizer.remainingTextAsToken.tokenValue.toIntOrNull()?.let {joinedGuilds[sourceMessage.guild!!]!!.musicManager.player.volume = it.coerceIn(0, 200)}
             else
                 sourceMessage.channel.sendMessage("Volume is currently set to ${joinedGuilds[sourceMessage.guild!!]!!.musicManager.player.volume}").complete()
         }
-        "say" -> {
+    }
+    
+    class Say: Command("say")
+    {
+        override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
+        {
             if(isServerAdmin(sourceMessage.member))
             {
                 var content = tokenizer.remainingTextAsToken.tokenValue
@@ -162,14 +232,24 @@ fun runCommand(command: String, tokenizer: Tokenizer, sourceMessage: Message)
                 println("${sourceMessage.author.name} made me say \"$content\"")
             }
         }
-        "initialRole" -> {
+    }
+    
+    class InitialRole: Command("initialRole")
+    {
+        override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
+        {
             if(isServerAdmin(sourceMessage.member) && tokenizer.hasNext())
             {
                 joinedGuilds[sourceMessage.guild]!!.initialRole = sourceMessage.guild.getRoleById(tokenizer.remainingTextAsToken.tokenValue)
                 save()
             }
         }
-        "channel" -> {
+    }
+    
+    class Channel: Command("channel")
+    {
+        override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
+        {
             if(isServerAdmin(sourceMessage.member) && tokenizer.hasNext())
             {
                 val channelMode = tokenizer.next().tokenValue
@@ -212,7 +292,12 @@ fun runCommand(command: String, tokenizer: Tokenizer, sourceMessage: Message)
                 }
             }
         }
-        "admin" -> {
+    }
+    
+    class Admin: Command("admin")
+    {
+        override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
+        {
             if(isServerAdmin(sourceMessage.member) && tokenizer.hasNext())
             {
                 val adminMode = tokenizer.next().tokenValue
@@ -238,7 +323,12 @@ fun runCommand(command: String, tokenizer: Tokenizer, sourceMessage: Message)
                 }
             }
         }
-        "help" -> {
+    }
+    
+    class Help: Command("help")
+    {
+        override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
+        {
             if(!tokenizer.hasNext())
             {
                 if(isServerAdmin(sourceMessage.member))
@@ -270,17 +360,6 @@ fun runCommand(command: String, tokenizer: Tokenizer, sourceMessage: Message)
             }
         }
     }
-}
-
-private fun splitAt2000(text: String): List<String>
-{
-    if(text.length <= 2000)
-        return listOf(text)
-    val splitIndex = text.lastIndexOf('\n', 2000)
-    return if(splitIndex < 0)
-        listOf(text.substring(0, 2000)) + splitAt2000(text.substring(2000))
-    else
-        listOf(text.substring(0, splitIndex)) + splitAt2000(text.substring(splitIndex))
 }
 
 fun loadAndPlay(sourceMessage: Message, trackUrl: String?)
@@ -317,7 +396,7 @@ fun loadAndPlay(sourceMessage: Message, trackUrl: String?)
             {
                 musicChannel?.sendMessage("Could not play song from url: $trackUrl")?.queue()
             }
-        
+            
             /**
              * Called when the requested item is a track and it was successfully loaded.
              * @param track The loaded track
@@ -327,7 +406,7 @@ fun loadAndPlay(sourceMessage: Message, trackUrl: String?)
                 musicChannel?.sendMessage("Adding to queue: ${track.info.title}")?.queue()
                 play(sourceMessage.member.voiceState.channel, musicManager, track)
             }
-        
+            
             /**
              * Called when there were no items found by the specified identifier.
              */
@@ -335,13 +414,14 @@ fun loadAndPlay(sourceMessage: Message, trackUrl: String?)
             {
                 musicChannel?.sendMessage("Could not find anything for url: $trackUrl")?.queue()
             }
-        
+            
             /**
              * Called when the requested item is a playlist and it was successfully loaded.
              * @param playlist The loaded playlist
              */
             override fun playlistLoaded(playlist: AudioPlaylist)
             {
+                @Suppress("CascadeIf")
                 if(playlist.tracks.isEmpty())
                 {
                     musicChannel?.sendMessage("Playlist is empty")?.queue()
@@ -362,6 +442,17 @@ fun loadAndPlay(sourceMessage: Message, trackUrl: String?)
     {
         musicManager.scheduler.resume()
     }
+}
+
+private fun splitAt2000(text: String): List<String>
+{
+    if(text.length <= 2000)
+        return listOf(text)
+    val splitIndex = text.lastIndexOf('\n', 2000)
+    return if(splitIndex < 0)
+        listOf(text.substring(0, 2000)) + splitAt2000(text.substring(2000))
+    else
+        listOf(text.substring(0, splitIndex)) + splitAt2000(text.substring(splitIndex))
 }
 
 private fun sanitize(text: String) = if(urlRegex.matches(text)) "<$text>" else text

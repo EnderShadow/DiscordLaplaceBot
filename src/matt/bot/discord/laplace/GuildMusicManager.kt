@@ -1,5 +1,6 @@
 package matt.bot.discord.laplace
 
+import com.sedmelluq.discord.lavaplayer.player.AudioPlayer
 import com.sedmelluq.discord.lavaplayer.player.AudioPlayerManager
 import net.dv8tion.jda.core.entities.Guild
 
@@ -16,7 +17,7 @@ class GuildMusicManager
     /**
      * Audio player for the guild.
      */
-    val player = manager.createPlayer()
+    val player: AudioPlayer = manager.createPlayer()
     /**
      * Track scheduler for the player.
      */
