@@ -21,31 +21,41 @@ fun runCommand(command: String, tokenizer: Tokenizer, sourceMessage: Message)
 }
 
 @Suppress("unused")
-sealed class Command(val prefix: String)
+sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
 {
     companion object
     {
-        val commands = mutableMapOf<String, Command>()
-        val noopCommand: Command
+        private val commands = mutableMapOf<String, Command>()
+        private val noopCommand: Command
         
         init
         {
             Command::class.nestedClasses.asSequence().filter {it.isSubclassOf(Command::class)}.map {it.constructors.first().call() as Command}.forEach {commands[it.prefix] = it}
-            noopCommand = commands["noop"]!!
+            noopCommand = commands.remove("noop")!!
         }
         
         operator fun get(prefix: String) = commands.getOrDefault(prefix, noopCommand)
     }
     
+    abstract fun helpMessage(): String
     abstract operator fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
     
     class NoopCommand: Command("noop")
     {
+        override fun helpMessage() = ""
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message) {}
     }
     
     class WhoAmI: Command("whoami")
     {
+        override fun helpMessage() = """`l!whoami` __Tells you who you are.__
+            |
+            |**Usage:** l!whoami
+            |
+            |**Examples:**
+            |`l!whoami` Who are you?
+        """.trimMargin()
+        
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
         {
             sourceMessage.channel.sendMessage("You are ${sourceMessage.member.effectiveName}").queue()
@@ -54,6 +64,21 @@ sealed class Command(val prefix: String)
     
     class Saved: Command("saved")
     {
+        override fun helpMessage() = """`l!saved` __Saves text so you can recall it at a later time or saves music URLs so you can play them later__
+            |
+            |**Usage:** l!saved set [key] [text or url]
+            |              l!saved get [key]
+            |              l!saved remove [key]
+            |              l!saved play [key]
+            |              l!saved list
+            |
+            |**Examples:**
+            |`l!saved set song http://www.example.com/song.mp3` saves the url with the key 'song'
+            |`l!saved get song` tells you what you saved with the key 'song'
+            |`l!saved play song` plays what you saved with the key 'song'
+            |`l!saved list` lists everything you've saved
+        """.trimMargin()
+        
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
         {
             if(!tokenizer.hasNext())
@@ -119,16 +144,48 @@ sealed class Command(val prefix: String)
     
     class Play: Command("play")
     {
+        override fun helpMessage() = """`l!play` __Plays the song at the provided URL or the first song found on youtube using the provided text in a search. If no song is provided, it unpauses the music.__
+            |
+            |**Usage:** l!play
+            |              l!play [url]
+            |              l!play [search text]
+            |
+            |**Examples:**
+            |`l!play` unpauses the music if it's paused
+            |`l!play https://www.youtube.com/watch?v=dQw4w9WgXcQ` plays the song at that url
+            |`l!play rick roll` plays the first song found by searching 'rick roll' on youtube
+        """.trimMargin()
+        
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message) = loadAndPlay(sourceMessage, if(tokenizer.hasNext()) tokenizer.remainingTextAsToken.tokenValue else null)
     }
     
     class Restart: Command("restart")
     {
+        override fun helpMessage() = """`l!restart` __Restarts the currently playing song__
+            |
+            |**Usage:** l!restart
+            |
+            |**Examples:**
+            |`l!restart` restarts the currently playing song
+        """.trimMargin()
+        
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message) = joinedGuilds[sourceMessage.guild]!!.musicManager.scheduler.restartSong()
     }
     
     class Queue: Command("queue")
     {
+        override fun helpMessage() = """`l!queue` __Displays the songs in the queue__
+            |
+            |**Usage:** l!queue
+            |              l!queue duration
+            |              l!queue length
+            |
+            |**Examples:**
+            |`l!queue` lists all the songs and their index in the queue
+            |`l!queue duration` displays the remaining time left in the queue
+            |`l!queue length` displays how many songs are in the queue. This does not include the currently playing song
+        """.trimMargin()
+        
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
         {
             val musicManager = joinedGuilds[sourceMessage.guild]!!.musicManager
@@ -174,17 +231,44 @@ sealed class Command(val prefix: String)
     }
     
     class Pause: Command("pause")
-    {
+    {override fun helpMessage() = """`l!pause` __Pauses the music that's playing if any music is playing__
+            |
+            |**Usage:** l!pause
+            |
+            |**Examples:**
+            |`l!pause` pauses the currently playing music if any music is playing
+        """.trimMargin()
+        
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message) = joinedGuilds[sourceMessage.guild]!!.musicManager.scheduler.pause()
     }
     
     class Stop: Command("stop")
     {
+        override fun helpMessage() = """`l!stop` __Stops playing music and clears the queue__
+            |
+            |**Usage:** l!stop
+            |
+            |**Examples:**
+            |`l!stop` stops playing music and clears the queue
+        """.trimMargin()
+        
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message) = stopMusic(sourceMessage.guild)
     }
     
     class Skip: Command("skip")
     {
+        override fun helpMessage() = """`l!skip` __skips the currently playing song or the songs at the provided indices and ranges__
+            |
+            |**Usage:** l!skip
+            |              l!skip [index or range] ...
+            |
+            |**Examples:**
+            |`l!skip` skips the currently playing song
+            |`l!skip 3` skips the song at index 3 in the queue
+            |`l!skip 1-3` skips the 3 songs after the currently playing song
+            |`l!skip 1-3 5-9` skips the 9 songs after the currently playing song except for the song at index 4
+        """.trimMargin()
+        
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
         {
             if(tokenizer.hasNext())
@@ -207,6 +291,16 @@ sealed class Command(val prefix: String)
     
     class Volume: Command("volume")
     {
+        override fun helpMessage() = """`l!volume` __Displays the volume of the music or sets it to the provided value__
+            |
+            |**Usage:** l!volume
+            |              l!volume [level]
+            |
+            |**Examples:**
+            |`l!volume` displays volume of the music
+            |`l!volume 100` sets the volume to 100 percent
+        """.trimMargin()
+        
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
         {
             if(tokenizer.hasNext())
@@ -216,8 +310,18 @@ sealed class Command(val prefix: String)
         }
     }
     
-    class Say: Command("say")
+    class Say: Command("say", true)
     {
+        override fun helpMessage() = """`l!say` __Makes the bot say something__
+            |
+            |**Usage:** l!say [text]
+            |              l!say [text] !tts
+            |
+            |**Examples:**
+            |`l!say hello world` makes the bot say 'hello world'
+            |`l!say hello world !tts` makes the bot say 'hello world' with tts
+        """.trimMargin()
+        
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
         {
             if(isServerAdmin(sourceMessage.member))
@@ -234,8 +338,16 @@ sealed class Command(val prefix: String)
         }
     }
     
-    class InitialRole: Command("initialRole")
+    class InitialRole: Command("initialRole", true)
     {
+        override fun helpMessage() = """`l!initialRole` __Sets the initial role for members of the server__
+            |
+            |**Usage:** l!initialRole [role]
+            |
+            |**Examples:**
+            |`l!initialRole @member` sets the initial role for the server to the @member role
+        """.trimMargin()
+        
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
         {
             if(isServerAdmin(sourceMessage.member) && tokenizer.hasNext())
@@ -246,8 +358,29 @@ sealed class Command(val prefix: String)
         }
     }
     
-    class Channel: Command("channel")
+    class Channel: Command("channel", true)
     {
+        override fun helpMessage() = """`l!channel` __Manages the channels used by the bot__
+            |
+            |**Available Channels:**
+            |`rules` the channel where the server rules are located
+            |`welcomeMessage` the channel where the bot should welcome the user with a message
+            |`userLeft` the channel where the bot should send a message when a user leaves or is kicked
+            |`userBanned` the channel where the bot should send a message when a user is banned
+            |`botLog` the channel where the bot should put any information that the moderators or admins might want to know
+            |`music` the text channel for music related messages
+            |`welcome` the channel used making sure that a user isn't a bot and agrees to the server rules before getting an initial role
+            |
+            |Any channel can be set to `none` to disable it
+            |
+            |**Usage:** l!channel set [channel type] [channel]
+            |              l!channel get [channel type]
+            |
+            |**Examples:**
+            |`l!channel set rules #rules` sets the rules channel to #rules
+            |`l!channel get rules` displays the channel that has the server rules
+        """.trimMargin()
+        
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
         {
             if(isServerAdmin(sourceMessage.member) && tokenizer.hasNext())
@@ -294,8 +427,21 @@ sealed class Command(val prefix: String)
         }
     }
     
-    class Admin: Command("admin")
+    class Admin: Command("admin", true)
     {
+        override fun helpMessage() = """`l!admin` __Used for managing the roles that can manage the bot__
+            |
+            |**Usage:** l!admin list
+            |              l!admin add [role] ...
+            |              l!admin remove [role] ...
+            |
+            |The server owner can always administrate the bot
+            |
+            |**Examples:**
+            |`l!admin list` lists the roles that can currently manage the bot
+            |`l!admin add @Admin @Moderator` adds the @Admin and @Moderator role to the list of roles that can administrate the bot
+        """.trimMargin()
+        
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
         {
             if(isServerAdmin(sourceMessage.member) && tokenizer.hasNext())
@@ -327,37 +473,38 @@ sealed class Command(val prefix: String)
     
     class Help: Command("help")
     {
+        override fun helpMessage() = """`l!help` __Displays a list of commands. Provide a command to get its info__
+            |
+            |**Usage:** l!help [command]
+            |
+            |**Examples:**
+            |`l!help` displays a list of all commands
+            |`l!help whoami` displays the help info for the whoami command
+        """.trimMargin()
+        
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
         {
-            if(!tokenizer.hasNext())
+            val (adminCommands, normalCommands) = commands.values.splitAndMap(Command::requiresAdmin) {it.prefix}
+            val message = if(!tokenizer.hasNext())
             {
-                if(isServerAdmin(sourceMessage.member))
-                    MessageBuilder("Known commands: `help, whoami, saved, play, restart, queue, pause, stop, skip, volume, say, initialRole, channel, admin`").sendTo(sourceMessage.channel).complete()
-                else
-                    MessageBuilder("Known commands: `help, whoami, saved, play, restart, queue, pause, stop, skip, volume`").sendTo(sourceMessage.channel).complete()
+                """```bash
+                    |'command List'```
+                    |
+                    |Use `!help [command]` to get more info on a specific command, for example: `l!help whoami`
+                    |
+                    |**Standard Commands**
+                    |${normalCommands.joinToString(" ") {"`$it`"}}
+                    |
+                    |**Admin Commands**
+                    |${adminCommands.joinToString(" ") {"`$it`"}}
+                """.trimMargin()
             }
             else
             {
-                val commandToQuery = tokenizer.remainingTextAsToken.tokenValue
-                when(commandToQuery)
-                {
-                    "whoami" -> MessageBuilder("```whoami \n\tTells you who you are```")
-                    "saved" -> MessageBuilder("```saved (set|get|remove|list|play) [key] [text] \n\tSets the saved key to the given text, gets what's saved with the key, removes what's saved with the key, lists all saved keys and associated text, or plays what's saved with the key```")
-                    "play" -> MessageBuilder("```play [URL] \n\tPlays the song at the url or unpauses the player if not url is given```")
-                    "restart" -> MessageBuilder("```restart \n\tRestarts the currently playing song```")
-                    "queue" -> MessageBuilder("```queue [duration] \n\tLists the currently queued songs or the duration of the songs in the queue```")
-                    "pause" -> MessageBuilder("```pause \n\tPauses the player```")
-                    "stop" -> MessageBuilder("```stop \n\tStops playing music and clears the queue")
-                    "skip" -> MessageBuilder("```skip (index|range)* \n\tSkips the currently playing song or removes the songs at the indices and ranges which can be obtained from the queue command. If -1 is used as the index, then the last added song is removed```")
-                    "volume" -> MessageBuilder("```volume [0-200] \n\tDisplays or sets the volume of the bot```")
-                    "say" -> MessageBuilder("```say MESSAGE [!tts] \n\tMakes the bot say MESSAGE (with tts if the message ends with !tts) \n\tRequires admin```")
-                    "initialRole" -> MessageBuilder("```initialRole [role] \n\tSets the role that a user gets upon joining a guild once they react to the welcome message in the welcome channel```")
-                    "channel" -> MessageBuilder("```channel (get|set) (rules|welcomeMessage|userLeft|userBanned|botLog|music|welcome) (NEW_CHANNEL|none) \n\tGets or sets the channel used by the bot for the given purpose```")
-                    "admin" -> MessageBuilder("```admin (list|add|remove) ROLE* \n\tLists, adds, or removes the roles that have bot admin rights```")
-                    "help" -> MessageBuilder("```help \n\tDisplays the known commands```")
-                    else -> MessageBuilder("```Unknown command: $commandToQuery```")
-                }.sendTo(sourceMessage.channel).complete()
+                val command = tokenizer.next().tokenValue
+                commands[command]?.helpMessage() ?: "Command '$command' was not found."
             }
+            sourceMessage.channel.sendMessage(message).queue()
         }
     }
 }

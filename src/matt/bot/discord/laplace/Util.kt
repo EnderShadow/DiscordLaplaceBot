@@ -31,3 +31,24 @@ fun toOrdinal(num: Int): String
         else -> "${numAsString}th"
     }
 }
+
+/**
+ * All items matching the filter are put into the first list. All items not matching the filter are put into the second list
+ */
+fun <T> Collection<T>.split(filter: (T) -> Boolean) = splitAndMap(filter) {it}
+
+/**
+ * All items matching the filter are put into the first list. All items not matching the filter are put into the second list
+ */
+fun <T, U> Collection<T>.splitAndMap(filter: (T) -> Boolean, mapper: (T) -> (U)): Pair<List<U>, List<U>>
+{
+    val l1 = mutableListOf<U>()
+    val l2 = mutableListOf<U>()
+    forEach {
+        if(filter(it))
+            l1.add(mapper(it))
+        else
+            l2.add(mapper(it))
+    }
+    return Pair(l1, l2)
+}
