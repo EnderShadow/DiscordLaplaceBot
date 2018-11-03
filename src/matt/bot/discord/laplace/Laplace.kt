@@ -209,14 +209,11 @@ class UtilityListener: ListenerAdapter()
         clearWelcomeReactionsBy(event.guild, event.user)
         
         // Remove invites created by bots that join and then leave.
-        if(event.member.roles.isEmpty())
-        {
-            event.guild.invites.complete().forEach {
-                if(it.inviter.name.isNullOrBlank())
-                {
-                    println("Deleted an invite by ${event.user.name}")
-                    it.delete().queue()
-                }
+        event.guild.invites.complete().forEach {
+            if(it.inviter.name.isNullOrBlank())
+            {
+                println("Deleted an invite by ${event.user.name}")
+                it.delete().queue()
             }
         }
     }
