@@ -32,6 +32,8 @@ import net.dv8tion.jda.core.events.message.guild.GuildMessageReceivedEvent
 import net.dv8tion.jda.core.events.message.guild.GuildMessageUpdateEvent
 import net.dv8tion.jda.core.events.message.guild.react.GuildMessageReactionAddEvent
 import net.dv8tion.jda.core.hooks.ListenerAdapter
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import java.time.LocalDateTime
 
@@ -85,10 +87,28 @@ fun main(args: Array<String>)
 
 fun save()
 {
-    val guildSaveData = joinedGuilds.map {(guild, guildInfo) ->
-        "${guild.id}:${guildInfo.serverAdminRoles.joinToString(",") {it.id}}:${guildInfo.initialRole?.id}:${guildInfo.rulesChannel?.id},${guildInfo.welcomeMessageChannel?.id},${guildInfo.userLeaveChannel?.id},${guildInfo.userBannedChannel?.id},${guildInfo.botLogChannel?.id},${guildInfo.musicChannel?.id},${guildInfo.welcomeChannel?.id}"
-    }.joinToString("\n")
-    File("guildSaveData.txt").writeText(guildSaveData)
+    val guildSaveData = JSONArray(joinedGuilds.values.map {guildInfo ->
+        val guildJson = JSONObject()
+        
+        guildJson.put("id", guildInfo.guild.id)
+        guildJson.put("adminRoles", JSONArray(guildInfo.serverAdminRoles.map {it.id}))
+        guildJson.put("initialRole", guildInfo.initialRole?.id ?: JSONObject.NULL)
+        guildJson.put("rulesChannel", guildInfo.rulesChannel?.id ?: JSONObject.NULL)
+        guildJson.put("welcomeMessageChannel", guildInfo.welcomeMessageChannel?.id ?: JSONObject.NULL)
+        guildJson.put("userLeaveChannel", guildInfo.userLeaveChannel?.id ?: JSONObject.NULL)
+        guildJson.put("userBannedChannel", guildInfo.userBannedChannel?.id ?: JSONObject.NULL)
+        guildJson.put("botLogChannel", guildInfo.botLogChannel?.id ?: JSONObject.NULL)
+        guildJson.put("musicChannel", guildInfo.musicChannel?.id ?: JSONObject.NULL)
+        guildJson.put("welcomeChannel", guildInfo.welcomeChannel?.id ?: JSONObject.NULL)
+        guildJson.put("disabledCommands", JSONArray(guildInfo.disabledCommands))
+        guildJson.put("blockedUsers", JSONArray(guildInfo.blockedUsers.map {it.id}))
+        guildJson.put("volume", guildInfo.volume)
+        guildJson.put("volumeMultipliers", JSONObject(guildInfo.volumeMultipliers))
+        
+        guildJson
+    })
+    
+    File("guildSaveData.json").writeText(guildSaveData.toString())
     File("savedUserText.json").writeText(jsonFactory.toPrettyString(savedUserText))
 }
 
@@ -111,19 +131,29 @@ class UtilityListener: ListenerAdapter()
         // loads saved guild info
         event.jda.guilds.forEach {joinedGuilds.putIfAbsent(it, GuildInfo(it))}
         
-        File("guildSaveData.txt").readLines().asSequence().map {it.split(":")}.filter {it[0] in joinedGuilds.keys.map {it.id}}.toList().forEach {
-            val guildInfo = joinedGuilds[event.jda.getGuildById(it[0])]!!
-            guildInfo.serverAdminRoles.addAll(it[1].split(",").asSequence().filter {it.isNotBlank()}.map {guildInfo.guild.getRoleById(it)}.filter {it != null}.toList())
-            if(it[2] != "null")
-                guildInfo.initialRole = guildInfo.guild.getRoleById(it[2])
-            val messageChannels = it[3].split(",").map {if(it != "null") guildInfo.guild.getTextChannelById(it) else null}
-            guildInfo.rulesChannel = messageChannels[0]
-            guildInfo.welcomeMessageChannel = messageChannels[1]
-            guildInfo.userLeaveChannel = messageChannels[2]
-            guildInfo.userBannedChannel = messageChannels[3]
-            guildInfo.botLogChannel = messageChannels[4]
-            guildInfo.musicChannel = messageChannels[5]
-            guildInfo.welcomeChannel = messageChannels[6]
+        val guildSavedData = JSONArray(File("guildSaveData.json").readText())
+        guildSavedData.forEach {
+            val guildData = it as JSONObject
+            val guild = event.jda.getGuildById(guildData.getString("id"))
+            if(guild != null)
+            {
+                val guildInfo = joinedGuilds[guild]!!
+                guildInfo.serverAdminRoles.addAll(guildData.getJSONArray("adminRoles").mapNotNull {guildInfo.guild.getRoleById(it as String)})
+                guildInfo.initialRole = guildData.getStringOrNull("initialRole")?.let {guildInfo.guild.getRoleById(it)}
+                guildInfo.rulesChannel = guildData.getStringOrNull("rulesChannel")?.let {guildInfo.guild.getTextChannelById(it)}
+                guildInfo.welcomeMessageChannel = guildData.getStringOrNull("welcomeMessageChannel")?.let {guildInfo.guild.getTextChannelById(it)}
+                guildInfo.userLeaveChannel = guildData.getStringOrNull("userLeaveChannel")?.let {guildInfo.guild.getTextChannelById(it)}
+                guildInfo.userBannedChannel = guildData.getStringOrNull("userBannedChannel")?.let {guildInfo.guild.getTextChannelById(it)}
+                guildInfo.botLogChannel = guildData.getStringOrNull("botLogChannel")?.let {guildInfo.guild.getTextChannelById(it)}
+                guildInfo.musicChannel = guildData.getStringOrNull("musicChannel")?.let {guildInfo.guild.getTextChannelById(it)}
+                guildInfo.welcomeChannel = guildData.getStringOrNull("welcomeChannel")?.let {guildInfo.guild.getTextChannelById(it)}
+                @Suppress("UNCHECKED_CAST")
+                guildInfo.disabledCommands.addAll(guildData.getJSONArray("disabledCommands").toList() as List<String>)
+                guildInfo.blockedUsers.addAll(guildData.getJSONArray("blockedUsers").map {event.jda.getUserById(it as String)})
+                guildInfo.volume = guildData.getInt("volume")
+                @Suppress("UNCHECKED_CAST")
+                guildInfo.volumeMultipliers.putAll(guildData.getJSONObject("volumeMultipliers").toMap() as Map<String, Double>)
+            }
         }
     }
     
@@ -177,6 +207,18 @@ class UtilityListener: ListenerAdapter()
             MessageBuilder("Goodbye ${event.user.name}.\nAnnouncer: ${event.user.name} deleted.").sendTo(sendToChannel).complete()
         
         clearWelcomeReactionsBy(event.guild, event.user)
+        
+        // Remove invites created by bots that join and then leave.
+        if(event.member.roles.isEmpty())
+        {
+            event.guild.invites.complete().forEach {
+                if(it.inviter.name.isNullOrBlank())
+                {
+                    println("Deleted an invite by ${event.user.name}")
+                    it.delete().queue()
+                }
+            }
+        }
     }
     
     override fun onGuildBan(event: GuildBanEvent)
@@ -213,8 +255,9 @@ class UtilityListener: ListenerAdapter()
     
     override fun onGuildMessageUpdate(event: GuildMessageUpdateEvent)
     {
-        if(!event.author.isBot)
-            joinedGuilds[event.guild]!!.messageBuffer.update(event.message) {msg1, msg2 -> msg1.id == msg2.id}
+        val messageBuffer = joinedGuilds[event.guild]!!.messageBuffer
+        if(!event.author.isBot && event.message in messageBuffer)
+            messageBuffer.update(event.message) {msg1, msg2 -> msg1.id == msg2.id}
     }
     
     override fun onGuildMessageReactionAdd(event: GuildMessageReactionAddEvent)
@@ -268,6 +311,9 @@ class MessageListener: ListenerAdapter()
                 mentionSpammers[event.member] = Pair(count, System.currentTimeMillis())
             }
         }
+        
+        if(event.author in joinedGuilds[event.guild]!!.blockedUsers)
+            return
         
         val tokenizer = Tokenizer(event.message.contentRaw)
         if(!tokenizer.hasNext())

@@ -28,6 +28,8 @@ class RingBuffer<T>(private val capacity: Int)
         backingStorage[index] = obj
     }
     
+    operator fun contains(obj: T) = backingStorage.contains(obj)
+    
     fun remove(obj: T) = backingStorage.remove(obj)
     
     fun asList() = backingStorage.toList()

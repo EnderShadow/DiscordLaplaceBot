@@ -7,8 +7,8 @@ import com.sedmelluq.discord.lavaplayer.track.AudioTrack
 import net.dv8tion.jda.core.MessageBuilder
 import net.dv8tion.jda.core.entities.Guild
 import net.dv8tion.jda.core.entities.Message
+import net.dv8tion.jda.core.entities.User
 import net.dv8tion.jda.core.entities.VoiceChannel
-import kotlin.reflect.full.isSubclassOf
 
 val urlRegex = Regex("^(https?|ftp|file)://[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*[-a-zA-Z0-9+&@#/%=~_|]")
 
@@ -17,7 +17,8 @@ fun runCommand(command: String, tokenizer: Tokenizer, sourceMessage: Message)
     if(!sourceMessage.channelType.isGuild)
         return
     
-    Command[command](tokenizer, sourceMessage)
+    if(command !in joinedGuilds[sourceMessage.guild]!!.disabledCommands)
+        Command[command](tokenizer, sourceMessage)
 }
 
 @Suppress("unused")
@@ -30,7 +31,7 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
         
         init
         {
-            Command::class.nestedClasses.asSequence().filter {it.isSubclassOf(Command::class)}.map {it.constructors.first().call() as Command}.forEach {commands[it.prefix] = it}
+            Command::class.sealedSubclasses.asSequence().map {it.constructors.first().call()}.forEach {commands[it.prefix] = it}
             noopCommand = commands.remove("noop")!!
         }
         
@@ -303,10 +304,58 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
         
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
         {
+            val guildInfo = joinedGuilds[sourceMessage.guild]!!
             if(tokenizer.hasNext())
-                tokenizer.remainingTextAsToken.tokenValue.toIntOrNull()?.let {joinedGuilds[sourceMessage.guild!!]!!.musicManager.player.volume = it.coerceIn(0, 200)}
+            {
+                val volume = tokenizer.remainingTextAsToken.tokenValue.toIntOrNull()?.coerceIn(0, 200)
+                if(volume != null)
+                {
+                    val player = guildInfo.musicManager.player
+                    guildInfo.volume = volume
+                    if(player.playingTrack != null)
+                        player.volume = (volume * guildInfo.volumeMultipliers.getOrDefault(player.playingTrack.info.uri, 1.0)).toInt()
+                }
+            }
             else
-                sourceMessage.channel.sendMessage("Volume is currently set to ${joinedGuilds[sourceMessage.guild!!]!!.musicManager.player.volume}").complete()
+            {
+                sourceMessage.channel.sendMessage("Volume is currently set to ${guildInfo.volume}").complete()
+            }
+        }
+    }
+    
+    class LinkVolume: Command("volumeMultiplier")
+    {
+        override fun helpMessage() = """`l!volumeMultiplier` __Displays the volume multiplier for the currently playing song or sets it__
+            |
+            |**Usage:** l!volumeMultiplier
+            |              l!volumeMultiplier [multiplier]
+            |
+            |**Examples:**
+            |`l!volumeMultiplier` displays volume multiplier for this link
+            |`l!volumeMultiplier 1.5` sets the volume multiplier to 1.5 for this link
+        """.trimMargin()
+        
+        override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
+        {
+            val guildInfo = joinedGuilds[sourceMessage.guild]!!
+            val player = guildInfo.musicManager.player
+            if(player.playingTrack == null)
+            {
+                sourceMessage.channel.sendMessage("A song must be playing to get or set the multiplier")
+            }
+            else if(tokenizer.hasNext())
+            {
+                val mult = tokenizer.remainingTextAsToken.tokenValue.toDoubleOrNull()?.coerceIn(0.0, 4.0)
+                if(mult != null)
+                {
+                    guildInfo.volumeMultipliers[player.playingTrack.info.uri] = mult
+                    player.volume = (guildInfo.volume * mult).toInt()
+                }
+            }
+            else
+            {
+                sourceMessage.channel.sendMessage("Volume multiplier is currently set to ${guildInfo.volumeMultipliers.getOrDefault(player.playingTrack.info.uri, 1.0)}").complete()
+            }
         }
     }
     
@@ -471,6 +520,117 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
         }
     }
     
+    class CommandControl: Command("command", true)
+    {
+        override fun helpMessage() = """`l!command` __Used for disabling and enabling commands for this server__
+            |
+            |**Usage:** l!command enable [command]
+            |              l!command disable [command]
+            |              l!command status [command]
+            |
+            |This command cannot be disabled. You can use `*` for the command to perform the action on all commands.
+            |
+            |**Examples:**
+            |`l!command enable help` enables the help command if it's disabled
+            |`l!command disable help` disables the help command if it's enabled
+            |`l!command status help` tells you whether or not the help command is enabled or disabled
+        """.trimMargin()
+    
+        @Suppress("NAME_SHADOWING")
+        override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
+        {
+            if(isServerAdmin(sourceMessage.member) && tokenizer.hasNext())
+            {
+                val mode = tokenizer.next().tokenValue
+                val command = tokenizer.remainingTextAsToken.tokenValue
+                if(command != "*" && command !in commands)
+                {
+                    sourceMessage.channel.sendMessage("'$command' is not a valid command").queue()
+                    return
+                }
+                if(command == prefix && mode == "disable")
+                {
+                    sourceMessage.channel.sendMessage("Cannot disable the command used for enabling and disabling other commands").queue()
+                    return
+                }
+                val disabledCommands = joinedGuilds[sourceMessage.guild]!!.disabledCommands
+                if(command == "*")
+                {
+                    when(mode)
+                    {
+                        "enable" -> disabledCommands.clear()
+                        "disable" -> disabledCommands.addAll(commands.keys.filter {it != prefix})
+                        "status" ->
+                        {
+                            sourceMessage.channel.sendMessage(commands.keys.joinToString("\n") {command ->
+                                if(command in disabledCommands)
+                                    "The `$command` command is currently disabled"
+                                else
+                                    "The `$command` command is currently enabled"
+                            }).queue()
+                        }
+                    }
+                }
+                else
+                {
+                    when(mode)
+                    {
+                        "enable" -> disabledCommands.remove(command)
+                        "disable" -> disabledCommands.add(command)
+                        "status" ->
+                        {
+                            if(command in disabledCommands)
+                                sourceMessage.channel.sendMessage("The $command command is currently disabled").queue()
+                            else
+                                sourceMessage.channel.sendMessage("The $command command is currently enabled").queue()
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    class Block: Command("block", true)
+    {
+        override fun helpMessage() = """`l!block` __Used for preventing users from using the bot__
+            |
+            |**Usage:** l!block yes [user]
+            |              l!block no [user]
+            |
+            |The server owner can always block or unblock users from using the bot
+            |
+            |**Examples:**
+            |`l!block yes @JoeShmoe` prevents @JoeShmoe from using the bot
+            |`l!block yes @JoeShmoe` allows @JoeShmoe to use the bot if he was previously blocked
+        """.trimMargin()
+        
+        override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
+        {
+            if(isServerAdmin(sourceMessage.member) && tokenizer.hasNext())
+            {
+                val blockMode = tokenizer.next().tokenValue
+                if(tokenizer.hasNext())
+                {
+                    val user = tokenizer.next().objValue as User
+                    if(sourceMessage.guild.getMember(user)?.isOwner == true)
+                        return
+                    
+                    when(blockMode)
+                    {
+                        "yes" -> {
+                            joinedGuilds[sourceMessage.guild]!!.blockedUsers.add(user)
+                            sourceMessage.channel.sendMessage("${user.asMention} has been blocked from using me").queue()
+                        }
+                        "no" -> {
+                            joinedGuilds[sourceMessage.guild]!!.blockedUsers.remove(user)
+                            sourceMessage.channel.sendMessage("${user.asMention} has been unblocked from using me").queue()
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
     class Help: Command("help")
     {
         override fun helpMessage() = """`l!help` __Displays a list of commands. Provide a command to get its info__
@@ -531,7 +691,15 @@ fun loadAndPlay(sourceMessage: Message, trackUrl: String?)
             searchRequest.q = trackUrl
             searchRequest.type = "video"
             val response = searchRequest.execute()
-            trackUrl = "$youtubeBaseUrl${response.items[0].id.videoId}"
+            if(response.items.isNotEmpty())
+            {
+                trackUrl = "$youtubeBaseUrl${response.items[0].id.videoId}"
+            }
+            else
+            {
+                musicChannel?.sendMessage("Could not find anything for the search: $trackUrl")?.queue()
+                return
+            }
         }
         playerManager.loadItemOrdered(musicManager, trackUrl, object : AudioLoadResultHandler
         {

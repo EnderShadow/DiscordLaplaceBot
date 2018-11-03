@@ -36,6 +36,7 @@ class TrackScheduler
         }
         else
         {
+            player.volume = joinedGuilds[guild]!!.let {it.volume * it.volumeMultipliers.getOrDefault(track.info.uri, 1.0)}.toInt()
             joinedGuilds[guild]!!.musicChannel?.sendMessage("Now playing ${track.info.title}")?.complete()
         }
     }
@@ -76,7 +77,10 @@ class TrackScheduler
             joinedGuilds[guild]!!.musicChannel?.sendMessage("Now playing ${queue.peek().info.title}")?.complete()
         // Start the next track, regardless of if something is already playing or not. In case queue was empty, we are
         // giving null to startTrack, which is a valid argument and will simply stop the player.
-        player.startTrack(queue.poll(), false)
+        val track = queue.poll()
+        player.startTrack(track, false)
+        if(track != null)
+            player.volume = joinedGuilds[guild]!!.let {it.volume * it.volumeMultipliers.getOrDefault(track.info.uri, 1.0)}.toInt()
     }
     
     fun pause()

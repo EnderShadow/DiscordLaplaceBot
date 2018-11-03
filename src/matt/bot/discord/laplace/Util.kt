@@ -3,6 +3,7 @@ package matt.bot.discord.laplace
 import net.dv8tion.jda.core.JDA
 import net.dv8tion.jda.core.entities.Member
 import net.dv8tion.jda.core.entities.Message
+import org.json.JSONObject
 
 fun countMentions(message: Message) = message.mentionedChannels.size + message.mentionedRoles.size + message.mentionedUsers.size + if(message.mentionsEveryone()) 1 else 0
 
@@ -52,3 +53,5 @@ fun <T, U> Collection<T>.splitAndMap(filter: (T) -> Boolean, mapper: (T) -> (U))
     }
     return Pair(l1, l2)
 }
+
+fun JSONObject.getStringOrNull(key: String) = if(isNull(key)) null else getString(key)

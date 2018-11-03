@@ -44,7 +44,7 @@ class AudioPlayerSendHandler
             lastFrame = audioPlayer.provide()
         }
         
-        val data = if(lastFrame != null) lastFrame!!.data else null
+        val data = lastFrame?.data
         lastFrame = null
         
         return data

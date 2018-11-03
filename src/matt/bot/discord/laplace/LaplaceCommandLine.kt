@@ -19,7 +19,6 @@ fun commandLine(bot: JDA)
     var selectedTextChannel: TextChannel? = null
     var selectedVoiceChannel: VoiceChannel? = null
     
-    
     val scanner = Scanner(System.`in`)
     lineLoop@while(true)
     {
