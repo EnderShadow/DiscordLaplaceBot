@@ -178,19 +178,21 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
         override fun helpMessage() = """`l!queue` __Displays the songs in the queue__
             |
             |**Usage:** l!queue
-            |              l!queue duration
+            |              l!queue time
             |              l!queue length
+            |              l!queue link [song index]
             |
             |**Examples:**
             |`l!queue` lists all the songs and their index in the queue
-            |`l!queue duration` displays the remaining time left in the queue
+            |`l!queue time` displays the remaining time left in the queue
             |`l!queue length` displays how many songs are in the queue. This does not include the currently playing song
+            |`l!queue link 1` displays the url for the next song
         """.trimMargin()
         
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
         {
             val musicManager = joinedGuilds[sourceMessage.guild]!!.musicManager
-            if(tokenizer.hasNext() && tokenizer.remainingTextAsToken.tokenValue.equals("duration", true))
+            if(tokenizer.hasNext() && tokenizer.remainingTextAsToken.tokenValue.equals("time", true))
             {
                 val stringBuilder = StringBuilder()
                 val duration = musicManager.scheduler.durationSeconds
@@ -217,6 +219,19 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
             {
                 sourceMessage.channel.sendMessage("The queue contains ${musicManager.scheduler.numSongs()} songs.").complete()
             }
+            else if(tokenizer.hasNext() && tokenizer.remainingTextAsToken.tokenValue.startsWith("link"))
+            {
+                tokenizer.next()
+                val index = if(tokenizer.hasNext()) tokenizer.next().tokenValue.toIntOrNull() ?: 0 else 0
+                if(index >= 0 && index <= musicManager.scheduler.numSongs())
+                {
+                    val song = if(index == 0)
+                        musicManager.player.playingTrack
+                    else
+                        musicManager.scheduler.get(index - 1)
+                    sourceMessage.channel.sendMessage("The URL for ${song.info.title} is <${song.info.uri}>").queue()
+                }
+            }
             else
             {
                 val currentlyPlaying = musicManager.player.playingTrack?.let {"0 (Currently Playing): ${it.info.title}\n"} ?: ""
@@ -232,7 +247,8 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
     }
     
     class Pause: Command("pause")
-    {override fun helpMessage() = """`l!pause` __Pauses the music that's playing if any music is playing__
+    {
+        override fun helpMessage() = """`l!pause` __Pauses the music that's playing if any music is playing__
             |
             |**Usage:** l!pause
             |
@@ -266,6 +282,7 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
             |**Examples:**
             |`l!skip` skips the currently playing song
             |`l!skip 3` skips the song at index 3 in the queue
+            |`l!skip -1` removes the last song from the queue
             |`l!skip 1-3` skips the 3 songs after the currently playing song
             |`l!skip 1-3 5-9` skips the 9 songs after the currently playing song except for the song at index 4
         """.trimMargin()
@@ -389,20 +406,34 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
     
     class InitialRole: Command("initialRole", true)
     {
-        override fun helpMessage() = """`l!initialRole` __Sets the initial role for members of the server__
+        override fun helpMessage() = """`l!initialRole` __Gets or sets the initial role for members of the server__
             |
-            |**Usage:** l!initialRole [role]
+            |**Usage:** l!initialRole
+            |              l!initialRole [role]
+            |              l!initialRole none
             |
             |**Examples:**
+            |`l!initialRole` gets the initial role for the server
             |`l!initialRole @member` sets the initial role for the server to the @member role
+            |`l!initialRole none` sets the initial role for the server to no role
         """.trimMargin()
         
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
         {
-            if(isServerAdmin(sourceMessage.member) && tokenizer.hasNext())
+            if(isServerAdmin(sourceMessage.member))
             {
-                joinedGuilds[sourceMessage.guild]!!.initialRole = sourceMessage.guild.getRoleById(tokenizer.remainingTextAsToken.tokenValue)
-                save()
+                if(tokenizer.hasNext())
+                {
+                    joinedGuilds[sourceMessage.guild]!!.initialRole = if(tokenizer.remainingTextAsToken.tokenValue == "none")
+                        null
+                    else
+                        sourceMessage.guild.getRoleById(tokenizer.remainingTextAsToken.tokenValue)
+                    save()
+                }
+                else
+                {
+                    sourceMessage.channel.sendMessage("The current initial role is @${joinedGuilds[sourceMessage.guild]!!.initialRole?.name ?: "none"}").queue()
+                }
             }
         }
     }
@@ -424,10 +455,12 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
             |
             |**Usage:** l!channel set [channel type] [channel]
             |              l!channel get [channel type]
+            |              l!channel list
             |
             |**Examples:**
             |`l!channel set rules #rules` sets the rules channel to #rules
             |`l!channel get rules` displays the channel that has the server rules
+            |`l!channel list` displays all the available channels as well as the current channel they're set to
         """.trimMargin()
         
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
@@ -435,8 +468,25 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
             if(isServerAdmin(sourceMessage.member) && tokenizer.hasNext())
             {
                 val channelMode = tokenizer.next().tokenValue
+                
+                if(channelMode == "list")
+                {
+                    val guildInfo = joinedGuilds[sourceMessage.guild]!!
+                    val message = """`rules            .`${guildInfo.rulesChannel?.id?.run {"<#$this>"} ?: "none"}
+                        |`welcomeMessage   .`${guildInfo.welcomeMessageChannel?.id?.run {"<#$this>"} ?: "none"}
+                        |`userLeft         .`${guildInfo.userLeaveChannel?.id?.run {"<#$this>"} ?: "none"}
+                        |`userBanned       .`${guildInfo.userBannedChannel?.id?.run {"<#$this>"} ?: "none"}
+                        |`botLog           .`${guildInfo.botLogChannel?.id?.run {"<#$this>"} ?: "none"}
+                        |`music            .`${guildInfo.musicChannel?.id?.run {"<#$this>"} ?: "none"}
+                        |`welcome          .`${guildInfo.welcomeChannel?.id?.run {"<#$this>"} ?: "none"}
+                    """.trimMargin()
+                    sourceMessage.channel.sendMessage(message).queue()
+                    return
+                }
+                
                 if(!tokenizer.hasNext())
                     return
+                
                 if(channelMode == "get")
                 {
                     val channelCategory = tokenizer.remainingTextAsToken.tokenValue
@@ -450,7 +500,7 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
                         "music" -> joinedGuilds[sourceMessage.guild]!!.musicChannel?.id?.run {MessageBuilder("<#$this>")} ?: MessageBuilder("none")
                         "welcome" -> joinedGuilds[sourceMessage.guild]!!.welcomeChannel?.id?.run {MessageBuilder("<#$this>")} ?: MessageBuilder("none")
                         else -> MessageBuilder("Invalid channel")
-                    }.sendTo(sourceMessage.channel).complete()
+                    }.sendTo(sourceMessage.channel).queue()
                 }
                 else if(channelMode == "set")
                 {
@@ -469,7 +519,7 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
                         "music" -> sourceMessage.guild.getTextChannelById(newChannel)?.run {joinedGuilds[sourceMessage.guild]!!.musicChannel = if(newChannel == "none") null else this}
                         "welcome" -> sourceMessage.guild.getTextChannelById(newChannel)?.run {joinedGuilds[sourceMessage.guild]!!.welcomeChannel = if(newChannel == "none") null else this}
                         else -> null
-                    } ?: MessageBuilder("Invalid channel").sendTo(sourceMessage.channel).complete()
+                    } ?: MessageBuilder("Invalid channel").sendTo(sourceMessage.channel).queue()
                     save()
                 }
             }
@@ -626,6 +676,38 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
                             sourceMessage.channel.sendMessage("${user.asMention} has been unblocked from using me").queue()
                         }
                     }
+                }
+            }
+        }
+    }
+    
+    class FunStuff: Command("funStuff", true)
+    {
+        override fun helpMessage() = """`l!funStuff` __Used for enabling or disabling the fun stuff that the bot does__
+            |
+            |**Usage:** l!funStuff
+            |              l!funStuff [boolean]
+            |
+            |The fun stuff currently consists of a "make me a sandwich" joke thing and an element thing where the bot responds with the element name when you type the symbol for it
+            |
+            |**Examples:**
+            |`l!funStuff` tells you whether or not the fun stuff is enabled
+            |`l!funStuff true` enables the fun stuff
+        """.trimMargin()
+        
+        override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
+        {
+            if(isServerAdmin(sourceMessage.member))
+            {
+                if(tokenizer.hasNext())
+                {
+                    joinedGuilds[sourceMessage.guild]!!.funStuff = tokenizer.next().tokenValue.toBoolean()
+                    save()
+                    sourceMessage.channel.sendMessage("Fun stuff is now ${if(joinedGuilds[sourceMessage.guild]!!.funStuff) "enabled" else "disabled"}").queue()
+                }
+                else
+                {
+                    sourceMessage.channel.sendMessage("Fun stuff is currently ${if(joinedGuilds[sourceMessage.guild]!!.funStuff) "enabled" else "disabled"}").queue()
                 }
             }
         }

@@ -6,7 +6,7 @@ class GuildInfo(val guild: Guild, serverAdminRoles: List<Role> = emptyList(), va
                 var welcomeMessageChannel: TextChannel? = guild.defaultChannel, var userLeaveChannel: TextChannel? = guild.defaultChannel,
                 var userBannedChannel: TextChannel? = guild.defaultChannel, var botLogChannel: TextChannel? = null, var musicChannel: TextChannel? = null,
                 var welcomeChannel: TextChannel? = null, disabledCommands: Set<String> = emptySet(), blockedUsers: Set<User> = emptySet(),
-                var volume: Int = 50, volumeMultipliers: Map<String, Double> = emptyMap())
+                var volume: Int = 50, volumeMultipliers: Map<String, Double> = emptyMap(), var funStuff: Boolean = false)
 {
     val serverAdminRoles = serverAdminRoles.toMutableList()
     val disabledCommands = disabledCommands.toMutableSet()

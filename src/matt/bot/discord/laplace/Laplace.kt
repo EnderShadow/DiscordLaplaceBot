@@ -15,10 +15,7 @@ import net.dv8tion.jda.core.AccountType
 import net.dv8tion.jda.core.JDA
 import net.dv8tion.jda.core.JDABuilder
 import net.dv8tion.jda.core.MessageBuilder
-import net.dv8tion.jda.core.entities.ChannelType
-import net.dv8tion.jda.core.entities.Guild
-import net.dv8tion.jda.core.entities.Member
-import net.dv8tion.jda.core.entities.User
+import net.dv8tion.jda.core.entities.*
 import net.dv8tion.jda.core.events.*
 import net.dv8tion.jda.core.events.guild.GuildBanEvent
 import net.dv8tion.jda.core.events.guild.GuildJoinEvent
@@ -32,9 +29,12 @@ import net.dv8tion.jda.core.events.message.guild.GuildMessageReceivedEvent
 import net.dv8tion.jda.core.events.message.guild.GuildMessageUpdateEvent
 import net.dv8tion.jda.core.events.message.guild.react.GuildMessageReactionAddEvent
 import net.dv8tion.jda.core.hooks.ListenerAdapter
+import org.apache.commons.codec.digest.DigestUtils
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayInputStream
 import java.io.File
+import java.io.InputStream
 import java.time.LocalDateTime
 
 val jsonFactory: JacksonFactory = JacksonFactory.getDefaultInstance()
@@ -104,6 +104,7 @@ fun save()
         guildJson.put("blockedUsers", JSONArray(guildInfo.blockedUsers.map {it.id}))
         guildJson.put("volume", guildInfo.volume)
         guildJson.put("volumeMultipliers", JSONObject(guildInfo.volumeMultipliers))
+        guildJson.put("funStuff", guildInfo.funStuff)
         
         guildJson
     })
@@ -153,6 +154,7 @@ class UtilityListener: ListenerAdapter()
                 guildInfo.volume = guildData.getInt("volume")
                 @Suppress("UNCHECKED_CAST")
                 guildInfo.volumeMultipliers.putAll(guildData.getJSONObject("volumeMultipliers").toMap() as Map<String, Double>)
+                guildInfo.funStuff = guildData.getBoolean("funStuff")
             }
         }
     }
@@ -210,9 +212,9 @@ class UtilityListener: ListenerAdapter()
         
         // Remove invites created by bots that join and then leave.
         event.guild.invites.complete().forEach {
-            if(it.inviter.name.isNullOrBlank())
+            if(it.inviter?.name.isNullOrBlank())
             {
-                println("Deleted an invite by ${event.user.name}")
+                println("Deleted a webhook invite to #${it.channel.name} when ${event.user.name} left")
                 it.delete().queue()
             }
         }
@@ -241,7 +243,7 @@ class UtilityListener: ListenerAdapter()
         val message = messages.first()
         
         if(message.contentRaw.isNotBlank())
-            guildInfo.botLogChannel?.sendMessage("A message by ${message.author.asMention} in ${message.textChannel.asMention} was deleted. It's contents were:\n\n${message.contentRaw}")?.complete()
+            guildInfo.botLogChannel?.sendMessage("A message by ${message.author.name} in ${message.textChannel.asMention} was deleted. It's contents were:\n\n${message.contentRaw}")?.complete()
     }
     
     override fun onGuildMessageReceived(event: GuildMessageReceivedEvent)
@@ -282,32 +284,8 @@ class MessageListener: ListenerAdapter()
         if(event.author.isBot)
             return
         
-        // Checks for users that are spamming mentions
-        if(countMentions(event.message) >= 5 || event.message.mentionsEveryone())
-        {
-            var (count, lastSpamTime) = mentionSpammers.getOrDefault(event.member, Pair(0, 0L))
-            val timeDiff = System.currentTimeMillis() - lastSpamTime
-            if(timeDiff < 10 * 1000)
-                count += 1
-            else
-                count = 1
-            
-            // bans the user if they spammed mentions for a fifth (or more) time within the last 10 seconds
-            if(count >= 5)
-            {
-                event.guild.controller.ban(event.member, 1, "Spamming mentions")
-                mentionSpammers.remove(event.member)
-            }
-            else
-            {
-                // clears users from the list of users that spammed if it's been more than 10 seconds and then adds the user that just spammed to the list
-                mentionSpammers.keys.toList().forEach {
-                    if(System.currentTimeMillis() - mentionSpammers[it]!!.second > 10 * 1000)
-                        mentionSpammers.remove(it)
-                }
-                mentionSpammers[event.member] = Pair(count, System.currentTimeMillis())
-            }
-        }
+        // Spam checking
+        checkForSpam(event)
         
         if(event.author in joinedGuilds[event.guild]!!.blockedUsers)
             return
@@ -322,6 +300,9 @@ class MessageListener: ListenerAdapter()
             runCommand(firstToken.tokenValue, tokenizer, event.message)
             return
         }
+        
+        if(!joinedGuilds[event.guild]!!.funStuff)
+            return
         
         // Checks if the message is an element symbol from the periodic table of elements
         if(isElementSymbol(firstToken.tokenValue) && !tokenizer.hasNext())
@@ -349,4 +330,87 @@ class MessageListener: ListenerAdapter()
             }
         }
     }
+}
+
+//                                        hash     count  lastMessageTimeStamp
+val spamMap = mutableMapOf<Member, Triple<ByteArray, Int, Long>>()
+
+fun checkForSpam(event: MessageReceivedEvent)
+{
+    // Checks for users that are spamming mentions
+    if(countMentions(event.message) >= 5 || event.message.mentionsEveryone())
+    {
+        var (count, lastSpamTime) = mentionSpammers.getOrDefault(event.member, Pair(0, 0L))
+        val timeDiff = System.currentTimeMillis() - lastSpamTime
+        if(timeDiff < 10_000)
+            count += 1
+        else
+            count = 1
+        
+        // bans the user if they spammed mentions for a fifth (or more) time within the last 10 seconds
+        if(count >= 5)
+        {
+            event.guild.controller.ban(event.member, 1, "Spamming mentions").queue()
+            mentionSpammers.remove(event.member)
+        }
+        else
+        {
+            // clears users from the list of users that spammed if it's been more than 10 seconds and then adds the user that just spammed to the list
+            mentionSpammers.entries.toList().forEach {(key, value) ->
+                if(System.currentTimeMillis() - value.second > 10_000)
+                    mentionSpammers.remove(key)
+            }
+            mentionSpammers[event.member] = Pair(count, System.currentTimeMillis())
+        }
+    }
+    
+    // Checks for users that are spamming the same stuff over and over again
+    val messageInfo = spamMap[event.member]
+    if(messageInfo == null)
+    {
+        spamMap[event.member] = Triple(hashMessage(event.message), 1, System.currentTimeMillis())
+    }
+    else
+    {
+        val messageHash = hashMessage(event.message)
+        if(messageInfo.first.contentEquals(messageHash) && System.currentTimeMillis() - messageInfo.third < 5_000)
+        {
+            if(messageInfo.second == 9)
+            {
+                // This message makes it the 10th
+                event.guild.controller.ban(event.member, 1, "Spamming").queue()
+                spamMap.remove(event.member)
+            }
+            else
+            {
+                spamMap[event.member] = Triple(messageHash, messageInfo.second + 1, System.currentTimeMillis())
+            }
+        }
+        else
+        {
+            spamMap[event.member] = Triple(hashMessage(event.message), 1, System.currentTimeMillis())
+            spamMap.entries.toList().forEach {(key, value) ->
+                if(System.currentTimeMillis() - value.third > 5_000)
+                    spamMap.remove(key)
+            }
+        }
+    }
+}
+
+fun hashMessage(message: Message): ByteArray
+{
+    val messageDigest = DigestUtils.getSha256Digest()
+    messageDigest.update(message.contentRaw.toByteArray())
+    message.attachments.forEach {messageDigest.update(it.inputStream.toByteArray())}
+    return messageDigest.digest()
+}
+
+fun InputStream.toByteArray(): ByteArray
+{
+    if(this !is ByteArrayInputStream)
+        return this.readAllBytes()
+    
+    val field = ByteArrayInputStream::class.java.getDeclaredField("buf")
+    field.isAccessible = true
+    return field.get(this) as ByteArray
 }

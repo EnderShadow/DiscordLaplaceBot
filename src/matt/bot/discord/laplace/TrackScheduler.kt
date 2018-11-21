@@ -46,6 +46,8 @@ class TrackScheduler
         player.playingTrack.position = 0
     }
     
+    fun get(index: Int): AudioTrack = queue.elementAt(index)
+    
     fun remove(index: Int)
     {
         if(index == -2)
