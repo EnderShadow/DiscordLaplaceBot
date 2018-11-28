@@ -242,7 +242,7 @@ class UtilityListener: ListenerAdapter()
         //val deleteTime = lastDeletionEvent.creationTime.toLocalDateTime()
         val message = messages.first()
         
-        if(message.contentRaw.isNotBlank())
+        if(message.contentRaw.isNotBlank() && event.guild.banList.complete().none {it.user == message.author})
             guildInfo.botLogChannel?.sendMessage("A message by ${message.author.name} in ${message.textChannel.asMention} was deleted. It's contents were:\n\n${message.contentRaw}")?.complete()
     }
     
@@ -337,6 +337,9 @@ val spamMap = mutableMapOf<Member, Triple<ByteArray, Int, Long>>()
 
 fun checkForSpam(event: MessageReceivedEvent)
 {
+    if(event.channelType == ChannelType.PRIVATE || event.channelType == ChannelType.GROUP || event.isWebhookMessage)
+        return
+    
     // Checks for users that are spamming mentions
     if(countMentions(event.message) >= 5 || event.message.mentionsEveryone())
     {
@@ -350,7 +353,7 @@ fun checkForSpam(event: MessageReceivedEvent)
         // bans the user if they spammed mentions for a fifth (or more) time within the last 10 seconds
         if(count >= 5)
         {
-            event.guild.controller.ban(event.member, 1, "Spamming mentions").queue()
+            takeActionAgainstUser(event.member, true, "Spamming mentions")
             mentionSpammers.remove(event.member)
         }
         else
@@ -378,7 +381,7 @@ fun checkForSpam(event: MessageReceivedEvent)
             if(messageInfo.second == 9)
             {
                 // This message makes it the 10th
-                event.guild.controller.ban(event.member, 1, "Spamming").queue()
+                takeActionAgainstUser(event.member, true, "Spamming")
                 spamMap.remove(event.member)
             }
             else
@@ -394,6 +397,28 @@ fun checkForSpam(event: MessageReceivedEvent)
                     spamMap.remove(key)
             }
         }
+    }
+}
+
+fun takeActionAgainstUser(member: Member, ban: Boolean, reason: String)
+{
+    if(member.guild.id == "174678310868090880")
+    {
+        val actionRole = member.guild.getRolesByName("Detention", true)[0]
+        if(actionRole !in member.roles)
+        {
+            member.guild.controller.addSingleRoleToMember(member, actionRole).queue()
+    
+            val adminRoles = member.guild.getRolesByName("Moderator", true) + member.guild.getRolesByName("Admin", true)
+            member.guild.getTextChannelById("270733523952861186").sendMessage(adminRoles.joinToString(" ") {it.asMention}).queue()
+        }
+    }
+    else
+    {
+        if(ban)
+            member.guild.controller.ban(member, 1, reason).queue()
+        else
+            member.guild.controller.kick(member, reason).queue()
     }
 }
 

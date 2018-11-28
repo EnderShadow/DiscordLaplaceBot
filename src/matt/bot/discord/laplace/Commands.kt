@@ -5,10 +5,8 @@ import com.sedmelluq.discord.lavaplayer.tools.FriendlyException
 import com.sedmelluq.discord.lavaplayer.track.AudioPlaylist
 import com.sedmelluq.discord.lavaplayer.track.AudioTrack
 import net.dv8tion.jda.core.MessageBuilder
-import net.dv8tion.jda.core.entities.Guild
-import net.dv8tion.jda.core.entities.Message
-import net.dv8tion.jda.core.entities.User
-import net.dv8tion.jda.core.entities.VoiceChannel
+import net.dv8tion.jda.core.entities.*
+import java.lang.Exception
 
 val urlRegex = Regex("^(https?|ftp|file)://[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*[-a-zA-Z0-9+&@#/%=~_|]")
 
@@ -508,16 +506,23 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
                     if(!tokenizer.hasNext())
                         return
                     
+                    fun getTextChannelById(id: String): TextChannel?
+                    {
+                        if(id == "none")
+                            return null
+                        return sourceMessage.guild.getTextChannelById(id)
+                    }
+                    
                     val newChannel = tokenizer.remainingTextAsToken.tokenValue
                     when(channelCategory)
                     {
-                        "rules" -> sourceMessage.guild.getTextChannelById(newChannel)?.run {joinedGuilds[sourceMessage.guild]!!.rulesChannel = if(newChannel == "none") null else this}
-                        "welcomeMessage" -> sourceMessage.guild.getTextChannelById(newChannel)?.run {joinedGuilds[sourceMessage.guild]!!.welcomeMessageChannel = if(newChannel == "none") null else this}
-                        "userLeft" -> sourceMessage.guild.getTextChannelById(newChannel)?.run {joinedGuilds[sourceMessage.guild]!!.userLeaveChannel = if(newChannel == "none") null else this}
-                        "userBanned" -> sourceMessage.guild.getTextChannelById(newChannel)?.run {joinedGuilds[sourceMessage.guild]!!.userBannedChannel = if(newChannel == "none") null else this}
-                        "botLog" -> sourceMessage.guild.getTextChannelById(newChannel)?.run {joinedGuilds[sourceMessage.guild]!!.botLogChannel = if(newChannel == "none") null else this}
-                        "music" -> sourceMessage.guild.getTextChannelById(newChannel)?.run {joinedGuilds[sourceMessage.guild]!!.musicChannel = if(newChannel == "none") null else this}
-                        "welcome" -> sourceMessage.guild.getTextChannelById(newChannel)?.run {joinedGuilds[sourceMessage.guild]!!.welcomeChannel = if(newChannel == "none") null else this}
+                        "rules" -> joinedGuilds[sourceMessage.guild]!!.rulesChannel = getTextChannelById(newChannel)
+                        "welcomeMessage" -> joinedGuilds[sourceMessage.guild]!!.welcomeMessageChannel = getTextChannelById(newChannel)
+                        "userLeft" -> joinedGuilds[sourceMessage.guild]!!.userLeaveChannel = getTextChannelById(newChannel)
+                        "userBanned" -> joinedGuilds[sourceMessage.guild]!!.userBannedChannel = getTextChannelById(newChannel)
+                        "botLog" -> joinedGuilds[sourceMessage.guild]!!.botLogChannel = getTextChannelById(newChannel)
+                        "music" -> joinedGuilds[sourceMessage.guild]!!.musicChannel = getTextChannelById(newChannel)
+                        "welcome" -> joinedGuilds[sourceMessage.guild]!!.welcomeChannel = getTextChannelById(newChannel)
                         else -> null
                     } ?: MessageBuilder("Invalid channel").sendTo(sourceMessage.channel).queue()
                     save()
