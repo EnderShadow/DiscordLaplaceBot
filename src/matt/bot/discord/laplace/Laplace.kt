@@ -433,7 +433,7 @@ fun hashMessage(message: Message): ByteArray
 fun InputStream.toByteArray(): ByteArray
 {
     if(this !is ByteArrayInputStream)
-        return this.readAllBytes()
+        return this.readBytes()
     
     val field = ByteArrayInputStream::class.java.getDeclaredField("buf")
     field.isAccessible = true

@@ -6,3 +6,5 @@ savedUserText.json
 target/
 token
 .idea/workspace.xml
+.idea/encodings.xml
+out/
