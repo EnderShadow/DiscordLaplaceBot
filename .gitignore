@@ -5,6 +5,5 @@ guildSaveData.txt
 savedUserText.json
 target/
 token
-.idea/workspace.xml
-.idea/encodings.xml
+.idea/
 out/
