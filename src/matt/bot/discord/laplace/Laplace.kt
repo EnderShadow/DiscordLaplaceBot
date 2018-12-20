@@ -16,7 +16,10 @@ import net.dv8tion.jda.core.JDA
 import net.dv8tion.jda.core.JDABuilder
 import net.dv8tion.jda.core.MessageBuilder
 import net.dv8tion.jda.core.entities.*
-import net.dv8tion.jda.core.events.*
+import net.dv8tion.jda.core.events.DisconnectEvent
+import net.dv8tion.jda.core.events.ReadyEvent
+import net.dv8tion.jda.core.events.ReconnectedEvent
+import net.dv8tion.jda.core.events.ShutdownEvent
 import net.dv8tion.jda.core.events.guild.GuildBanEvent
 import net.dv8tion.jda.core.events.guild.GuildJoinEvent
 import net.dv8tion.jda.core.events.guild.GuildLeaveEvent
@@ -53,6 +56,8 @@ val joinedGuilds = mutableMapOf<Guild, GuildInfo>()
 
 val youtube = getYoutubeService()
 
+const val logIndent = "                                                         "
+
 var shutdownMode = ExitMode.SHUTDOWN
 
 fun getYoutubeService(): YouTube
@@ -66,6 +71,7 @@ fun getYoutubeService(): YouTube
 
 fun main(args: Array<String>)
 {
+    File("logs").mkdir()
     val token = File("token").readText()
     bot = JDABuilder(AccountType.BOT)
             .setToken(token)
@@ -105,11 +111,13 @@ fun save()
         guildJson.put("volume", guildInfo.volume)
         guildJson.put("volumeMultipliers", JSONObject(guildInfo.volumeMultipliers))
         guildJson.put("funStuff", guildInfo.funStuff)
+        guildJson.put("displayDeleted", guildInfo.displayDeleted)
+        guildJson.put("displayModified", guildInfo.displayModified)
         
         guildJson
     })
     
-    File("guildSaveData.json").writeText(guildSaveData.toString())
+    File("guildSaveData.json").writeText(guildSaveData.toString(4))
     File("savedUserText.json").writeText(jsonFactory.toPrettyString(savedUserText))
 }
 
@@ -155,6 +163,8 @@ class UtilityListener: ListenerAdapter()
                 @Suppress("UNCHECKED_CAST")
                 guildInfo.volumeMultipliers.putAll(guildData.getJSONObject("volumeMultipliers").toMap() as Map<String, Double>)
                 guildInfo.funStuff = guildData.getBoolean("funStuff")
+                guildInfo.displayDeleted = guildData.getBoolean("displayDeleted")
+                guildInfo.displayModified = guildData.getBoolean("displayModified")
             }
         }
     }
@@ -196,9 +206,9 @@ class UtilityListener: ListenerAdapter()
             return
         
         if(rulesChannel == null)
-            MessageBuilder("Welcome ${event.member.asMention} to my dominion!").sendTo(sendToChannel).complete()
+            MessageBuilder("Welcome ${event.member.asMention} to my dominion!").sendTo(sendToChannel).queue()
         else
-            MessageBuilder("Welcome ${event.member.asMention} to my dominion! Make sure you read <#${rulesChannel.id}>").sendTo(sendToChannel).complete()
+            MessageBuilder("Welcome ${event.member.asMention} to my dominion! Make sure you read <#${rulesChannel.id}>").sendTo(sendToChannel).queue()
     }
     
     override fun onGuildMemberLeave(event: GuildMemberLeaveEvent)
@@ -206,16 +216,18 @@ class UtilityListener: ListenerAdapter()
         val sendToChannel = joinedGuilds[event.guild]!!.userLeaveChannel
         val initialRole = joinedGuilds[event.guild]!!.initialRole
         if(sendToChannel != null && (initialRole == null || event.member.roles.contains(initialRole)))
-            MessageBuilder("Goodbye ${event.user.name}.\nAnnouncer: ${event.user.name} deleted.").sendTo(sendToChannel).complete()
+            MessageBuilder("Goodbye ${event.user.name}.\nAnnouncer: ${event.user.name} deleted.").sendTo(sendToChannel).queue()
         
         clearWelcomeReactionsBy(event.guild, event.user)
         
         // Remove invites created by bots that join and then leave.
-        event.guild.invites.complete().forEach {
-            if(it.inviter?.name.isNullOrBlank())
-            {
-                println("Deleted a webhook invite to #${it.channel.name} when ${event.user.name} left")
-                it.delete().queue()
+        event.guild.invites.queue {
+            it.forEach {invite ->
+                if(invite.inviter?.name.isNullOrBlank())
+                {
+                    //println("Deleted a webhook invite to #${it.channel.name} when ${event.user.name} left")
+                    invite.delete().queue()
+                }
             }
         }
     }
@@ -224,7 +236,7 @@ class UtilityListener: ListenerAdapter()
     {
         val sendToChannel = joinedGuilds[event.guild]!!.userBannedChannel
         if(sendToChannel != null)
-            MessageBuilder("${event.user.name} has been banned.").sendTo(sendToChannel).complete()
+            MessageBuilder("${event.user.name} has been banned.").sendTo(sendToChannel).queue()
     
         clearWelcomeReactionsBy(event.guild, event.user)
     }
@@ -243,7 +255,22 @@ class UtilityListener: ListenerAdapter()
         val message = messages.first()
         
         if(message.contentRaw.isNotBlank() && event.guild.banList.complete().none {it.user == message.author})
-            guildInfo.botLogChannel?.sendMessage("A message by ${message.author.name} in ${message.textChannel.asMention} was deleted. It's contents were:\n\n${message.contentRaw}")?.complete()
+        {
+            if(guildInfo.displayDeleted)
+            {
+                splitAt2000("A message by ${message.author.name} in ${message.textChannel.asMention} was deleted. It's contents were:\n\n${message.contentRaw}").forEach {
+                    guildInfo.botLogChannel?.sendMessage(it)?.queue()
+                }
+            }
+            
+            synchronized(guildInfo)
+            {
+                val textLog = File("logs/${event.guild.id}.log")
+                if(!textLog.exists())
+                    textLog.writeText("${event.guild.name}\n")
+                textLog.appendText("${message.creationTime.toLocalDateTime().toString().padEnd(28, ' ')}#${message.channel.name.padEnd(28, ' ')}${message.contentDisplay.lines().joinToString("\n$logIndent")}\n")
+            }
+        }
     }
     
     override fun onGuildMessageReceived(event: GuildMessageReceivedEvent)
@@ -254,9 +281,18 @@ class UtilityListener: ListenerAdapter()
     
     override fun onGuildMessageUpdate(event: GuildMessageUpdateEvent)
     {
-        val messageBuffer = joinedGuilds[event.guild]!!.messageBuffer
+        val guildInfo = joinedGuilds[event.guild]!!
+        val messageBuffer = guildInfo.messageBuffer
         if(!event.author.isBot && event.message in messageBuffer)
-            messageBuffer.update(event.message) {msg1, msg2 -> msg1.id == msg2.id}
+        {
+            val oldMessage = messageBuffer.update(event.message) {msg1, msg2 -> msg1.id == msg2.id}
+            if(guildInfo.displayModified)
+            {
+                splitAt2000("A message by ${event.author.name} in ${event.message.textChannel.asMention} was Edited.\nPrevious: ${oldMessage.contentRaw}\nCurrent: ${event.message.contentRaw}").forEach {
+                    guildInfo.botLogChannel?.sendMessage(it)?.queue()
+                }
+            }
+        }
     }
     
     override fun onGuildMessageReactionAdd(event: GuildMessageReactionAddEvent)
@@ -265,7 +301,7 @@ class UtilityListener: ListenerAdapter()
         {
             val role = joinedGuilds[event.guild]!!.initialRole
             if(role != null)
-                event.guild.controller.addSingleRoleToMember(event.member, role).complete()
+                event.guild.controller.addSingleRoleToMember(event.member, role).queue()
         }
     }
     
@@ -273,7 +309,7 @@ class UtilityListener: ListenerAdapter()
     {
         val role = joinedGuilds[event.guild]!!.initialRole
         if(role in event.roles)
-            joinedGuilds[event.guild]!!.welcomeMessageChannel?.sendMessage("Welcome ${event.member.asMention} to my dominion!")?.complete()
+            joinedGuilds[event.guild]!!.welcomeMessageChannel?.sendMessage("Welcome ${event.member.asMention} to my dominion!")?.queue()
     }
 }
 
@@ -307,7 +343,7 @@ class MessageListener: ListenerAdapter()
         // Checks if the message is an element symbol from the periodic table of elements
         if(isElementSymbol(firstToken.tokenValue) && !tokenizer.hasNext())
         {
-            MessageBuilder(getElementNameBySymbol(firstToken.tokenValue)).sendTo(event.channel).complete()
+            MessageBuilder(getElementNameBySymbol(firstToken.tokenValue)).sendTo(event.channel).queue()
             return
         }
         
@@ -316,17 +352,17 @@ class MessageListener: ListenerAdapter()
             if(event.message.contentRaw.toLowerCase().matches(Regex(".*?sudo.+?make\\s+me\\s+a\\s+sandwich.*?")))
             {
                 if(Math.random() < 0.8)
-                    event.channel.sendMessage("Ok, here's a sandwich.\nhttps://i.imgur.com/dlmkz6v.jpg").complete()
+                    event.channel.sendMessage("Ok, here's a sandwich.\nhttps://i.imgur.com/dlmkz6v.jpg").queue()
                 else
-                    event.channel.sendMessage("${event.author.asMention} is not in the sudoers file. This incident will be reported.").complete()
+                    event.channel.sendMessage("${event.author.asMention} is not in the sudoers file. This incident will be reported.").queue()
             }
             else if(event.message.contentRaw.toLowerCase().matches(Regex(".*?sudo.+?make\\s+me\\s+a\\s+furry\\s+sandwich.*?")))
             {
-                event.channel.sendMessage("https://i.imgur.com/CmVjtSV.jpg").complete()
+                event.channel.sendMessage("https://i.imgur.com/CmVjtSV.jpg").queue()
             }
             else if(event.message.contentRaw.toLowerCase().matches(Regex(".*?make\\s+me\\s+a\\s+sandwich.*?")))
             {
-                event.channel.sendMessage("Go make it yourself.").complete()
+                event.channel.sendMessage("Go make it yourself.").queue()
             }
         }
     }
@@ -410,7 +446,7 @@ fun takeActionAgainstUser(member: Member, ban: Boolean, reason: String)
             member.guild.controller.addSingleRoleToMember(member, actionRole).queue()
     
             val adminRoles = member.guild.getRolesByName("Moderator", true) + member.guild.getRolesByName("Admin", true)
-            member.guild.getTextChannelById("270733523952861186").sendMessage(adminRoles.joinToString(" ") {it.asMention}).queue()
+            member.guild.getTextChannelById("270733523952861186").sendMessage(adminRoles.joinToString(" ", postfix = "\n${member.asMention} has been detected spamming and was given ${actionRole.asMention}") {it.asMention}).queue()
         }
     }
     else
@@ -426,7 +462,7 @@ fun hashMessage(message: Message): ByteArray
 {
     val messageDigest = DigestUtils.getSha256Digest()
     messageDigest.update(message.contentRaw.toByteArray())
-    message.attachments.forEach {messageDigest.update(it.inputStream.toByteArray())}
+    message.attachments.forEach {messageDigest.update(it.inputStream.retry(10, InputStream::toByteArray))}
     return messageDigest.digest()
 }
 

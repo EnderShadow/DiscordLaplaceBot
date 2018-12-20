@@ -85,8 +85,9 @@ class Tokenizer(text: String): Iterator<Token>
                             '"' -> remainingText = remainingText.substring(0, index) + '"' + remainingText.substring(index + 2)
                             'u' ->
                             {
-                                val codePoint = remainingText.substring(index + 2, index + 6).toInt(16)
-                                remainingText = remainingText.substring(0, index) + codePoint.toChar() + remainingText.substring(index + 6)
+                                val codePoint = remainingText.substring(index + 2, index + 6).toIntOrNull(16)
+                                if(codePoint != null)
+                                    remainingText = remainingText.substring(0, index) + codePoint.toChar() + remainingText.substring(index + 6)
                             }
                         }
                     }
@@ -132,8 +133,9 @@ class Tokenizer(text: String): Iterator<Token>
                             '"' -> remainingText = remainingText.substring(0, index) + '"' + remainingText.substring(index + 2)
                             'u' ->
                             {
-                                val codePoint = remainingText.substring(index + 2, index + 6).toInt(16)
-                                remainingText = remainingText.substring(0, index) + codePoint.toChar() + remainingText.substring(index + 6)
+                                val codePoint = remainingText.substring(index + 2, index + 6).toIntOrNull(16)
+                                if(codePoint != null)
+                                    remainingText = remainingText.substring(0, index) + codePoint.toChar() + remainingText.substring(index + 6)
                             }
                         }
                     }

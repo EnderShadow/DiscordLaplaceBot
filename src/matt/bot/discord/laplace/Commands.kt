@@ -93,14 +93,14 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
                     val value = tokenizer.remainingTextAsToken.tokenValue
                     @Suppress("UNCHECKED_CAST")
                     savedUserText.getOrPut(sourceMessage.author.id) {mutableMapOf()}[key] = value
-                    sourceMessage.channel.sendMessage("Text saved successfully").complete()
+                    sourceMessage.channel.sendMessage("Text saved successfully").queue()
                     save()
                 }
                 "get" -> {
                     if(tokenizer.hasNext())
                     {
                         val key = tokenizer.remainingTextAsToken.tokenValue
-                        savedUserText.getOrDefault(sourceMessage.author.id, null)?.getOrDefault(key, null)?.let {sourceMessage.channel.sendMessage(it).complete()} ?: sourceMessage.channel.sendMessage("Could not find any text saved under: $key").complete()
+                        savedUserText.getOrDefault(sourceMessage.author.id, null)?.getOrDefault(key, null)?.let {sourceMessage.channel.sendMessage(it).queue()} ?: sourceMessage.channel.sendMessage("Could not find any text saved under: $key").queue()
                     }
                 }
                 "remove" -> {
@@ -118,11 +118,11 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
                 "list" -> {
                     val textMap = savedUserText.getOrDefault(sourceMessage.author.id, mutableMapOf())
                     if(textMap.isEmpty())
-                        sourceMessage.channel.sendMessage("You don't have any text saved").complete()
+                        sourceMessage.channel.sendMessage("You don't have any text saved").queue()
                     else
                     {
                         val text = splitAt2000("Here is what you have saved\n\n${textMap.entries.joinToString("\n") {"${it.key}: ${sanitize(it.value)}"}}")
-                        text.forEach {sourceMessage.channel.sendMessage(it).complete()}
+                        text.forEach {sourceMessage.channel.sendMessage(it).queue()}
                     }
                 }
                 "play" -> {
@@ -132,7 +132,7 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
                     val key = tokenizer.remainingTextAsToken.tokenValue
                     val url = savedUserText.getOrDefault(sourceMessage.author.id, null)?.getOrDefault(key, null)
                     if(url == null)
-                        sourceMessage.channel.sendMessage("Could not find any text saved under: $key").complete()
+                        sourceMessage.channel.sendMessage("Could not find any text saved under: $key").queue()
                     else
                         loadAndPlay(sourceMessage, url)
                 }
@@ -210,11 +210,11 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
                     stringBuilder.append("1 second")
                 else
                     stringBuilder.append("$seconds seconds")
-                sourceMessage.channel.sendMessage("The queue is $stringBuilder long").complete()
+                sourceMessage.channel.sendMessage("The queue is $stringBuilder long").queue()
             }
             else if(tokenizer.hasNext() && tokenizer.remainingTextAsToken.tokenValue.equals("length", true))
             {
-                sourceMessage.channel.sendMessage("The queue contains ${musicManager.scheduler.numSongs()} songs.").complete()
+                sourceMessage.channel.sendMessage("The queue contains ${musicManager.scheduler.numSongs()} songs.").queue()
             }
             else if(tokenizer.hasNext() && tokenizer.remainingTextAsToken.tokenValue.startsWith("link"))
             {
@@ -238,7 +238,7 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
                     text.forEach {sourceMessage.channel.sendMessage(it).queue()}
                 }
                 else
-                    sourceMessage.channel.sendMessage("There are no queued songs.").complete()
+                    sourceMessage.channel.sendMessage("There are no queued songs.").queue()
             }
         }
     }
@@ -332,7 +332,7 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
             }
             else
             {
-                sourceMessage.channel.sendMessage("Volume is currently set to ${guildInfo.volume}").complete()
+                sourceMessage.channel.sendMessage("Volume is currently set to ${guildInfo.volume}").queue()
             }
         }
     }
@@ -368,7 +368,7 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
             }
             else
             {
-                sourceMessage.channel.sendMessage("Volume multiplier is currently set to ${guildInfo.volumeMultipliers.getOrDefault(player.playingTrack.info.uri, 1.0)}").complete()
+                sourceMessage.channel.sendMessage("Volume multiplier is currently set to ${guildInfo.volumeMultipliers.getOrDefault(player.playingTrack.info.uri, 1.0)}").queue()
             }
         }
     }
@@ -393,9 +393,9 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
                 val tts = content.endsWith("!tts")
                 if(tts)
                     content = content.substring(0, content.length - 4).trim()
-                MessageBuilder(content).sendTo(sourceMessage.channel).tts(tts).complete()
+                MessageBuilder(content).sendTo(sourceMessage.channel).tts(tts).queue()
                 joinedGuilds[sourceMessage.guild]!!.messageBuffer.remove(sourceMessage)
-                sourceMessage.delete().complete()
+                sourceMessage.delete().queue()
                 println("${sourceMessage.author.name} made me say \"$content\"")
             }
         }
@@ -554,9 +554,9 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
                 {
                     "list" -> {
                         if(joinedGuilds[sourceMessage.guild]!!.serverAdminRoles.isNotEmpty())
-                            MessageBuilder(joinedGuilds[sourceMessage.guild]!!.serverAdminRoles.joinToString(" ") {it.asMention}).sendTo(sourceMessage.channel).complete()
+                            MessageBuilder(joinedGuilds[sourceMessage.guild]!!.serverAdminRoles.joinToString(" ") {it.asMention}).sendTo(sourceMessage.channel).queue()
                         else
-                            MessageBuilder("No roles are registered as a bot admin").sendTo(sourceMessage.channel).complete()
+                            MessageBuilder("No roles are registered as a bot admin").sendTo(sourceMessage.channel).queue()
                     }
                     "add" -> {
                         if(tokenizer.hasNext())
@@ -717,6 +717,59 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
         }
     }
     
+    class Logging: Command("logging", true)
+    {
+        override fun helpMessage() = """`l!logging` __Used for managing how the bot logs data__
+            |
+            |**Usage:** l!logging list
+            |              l!logging set [key] [boolean]
+            |
+            |Note: Nothing will be logged if the botDev channel is set to none
+            |
+            |**Examples:**
+            |`l!logging list` displays everything that can be logged
+            |`l!logging set deletion false` disables logging of deleted messages
+        """.trimMargin()
+    
+        override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
+        {
+            if(isServerAdmin(sourceMessage.member))
+            {
+                if(tokenizer.hasNext())
+                {
+                    val guildInfo = joinedGuilds[sourceMessage.guild]!!
+                    val mode = tokenizer.next().tokenValue
+                    if(mode == "list")
+                    {
+                        sourceMessage.channel.sendMessage("Deleted message logging: ${guildInfo.displayDeleted}\nEdited message logging: ${guildInfo.displayModified}").queue()
+                    }
+                    else if(mode == "set")
+                    {
+                        if(tokenizer.hasNext())
+                        {
+                            val key = tokenizer.next().tokenValue
+                            if(tokenizer.hasNext())
+                            {
+                                val value = tokenizer.next().tokenValue.toBoolean()
+                                if(key == "deleted")
+                                {
+                                    guildInfo.displayDeleted = value
+                                    sourceMessage.channel.sendMessage("Deleted message logigng is now $value").queue()
+                                }
+                                else if(key == "edited")
+                                {
+                                    guildInfo.displayModified = value
+                                    sourceMessage.channel.sendMessage("Edited message logigng is now $value").queue()
+                                }
+                                save()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
     class Help: Command("help")
     {
         override fun helpMessage() = """`l!help` __Displays a list of commands. Provide a command to get its info__
@@ -762,7 +815,7 @@ fun loadAndPlay(sourceMessage: Message, trackUrl: String?)
     
     if(sourceMessage.member.voiceState.channel == null)
     {
-        sourceMessage.channel.sendMessage("You need to be in a voice channel to play music").complete()
+        sourceMessage.channel.sendMessage("You need to be in a voice channel to play music").queue()
         return
     }
     
@@ -843,17 +896,6 @@ fun loadAndPlay(sourceMessage: Message, trackUrl: String?)
     {
         musicManager.scheduler.resume()
     }
-}
-
-private fun splitAt2000(text: String): List<String>
-{
-    if(text.length <= 2000)
-        return listOf(text)
-    val splitIndex = text.lastIndexOf('\n', 2000)
-    return if(splitIndex < 0)
-        listOf(text.substring(0, 2000)) + splitAt2000(text.substring(2000))
-    else
-        listOf(text.substring(0, splitIndex)) + splitAt2000(text.substring(splitIndex))
 }
 
 private fun sanitize(text: String) = if(urlRegex.matches(text)) "<$text>" else text

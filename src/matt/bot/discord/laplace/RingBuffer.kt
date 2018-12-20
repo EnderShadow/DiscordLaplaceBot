@@ -20,13 +20,15 @@ class RingBuffer<T>(private val capacity: Int)
             backingStorage.removeFirst()
     }
     
-    fun update(obj: T, equalityFunction: (T, T) -> Boolean)
+    fun update(obj: T, equalityFunction: (T, T) -> Boolean): T
     {
         val index = backingStorage.indexOfFirst {equalityFunction(obj, it)}
         if(index < 0)
             throw IllegalArgumentException("obj must be in the buffer in order to update it")
-        backingStorage[index] = obj
+        return backingStorage.set(index, obj)
     }
+    
+    fun get(checkFunction: (T) -> Boolean): T? = backingStorage.first(checkFunction)
     
     operator fun contains(obj: T) = backingStorage.contains(obj)
     
