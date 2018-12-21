@@ -56,8 +56,6 @@ val joinedGuilds = mutableMapOf<Guild, GuildInfo>()
 
 val youtube = getYoutubeService()
 
-const val logIndent = "                                                         "
-
 var shutdownMode = ExitMode.SHUTDOWN
 
 fun getYoutubeService(): YouTube
@@ -262,14 +260,6 @@ class UtilityListener: ListenerAdapter()
                     guildInfo.botLogChannel?.sendMessage(it)?.queue()
                 }
             }
-            
-            synchronized(guildInfo)
-            {
-                val textLog = File("logs/${event.guild.id}.log")
-                if(!textLog.exists())
-                    textLog.writeText("${event.guild.name}\n")
-                textLog.appendText("${message.creationTime.toLocalDateTime().toString().padEnd(28, ' ')}#${message.channel.name.padEnd(28, ' ')}${message.contentDisplay.lines().joinToString("\n$logIndent")}\n")
-            }
         }
     }
     
@@ -447,6 +437,9 @@ fun takeActionAgainstUser(member: Member, ban: Boolean, reason: String)
     
             val adminRoles = member.guild.getRolesByName("Moderator", true) + member.guild.getRolesByName("Admin", true)
             member.guild.getTextChannelById("270733523952861186").sendMessage(adminRoles.joinToString(" ", postfix = "\n${member.asMention} has been detected spamming and was given ${actionRole.asMention}") {it.asMention}).queue()
+            
+            val detentionChannel = member.guild.getTextChannelById("390301025384529921")
+            detentionChannel.sendMessage("${member.asMention} You have been put in detention because you are suspected of spamming. If this is a mistake then an admin or mod will be along shortly to fix it. If not, make your appeal here. You will be unable to post in other channels until this is resolved.").queue()
         }
     }
     else
