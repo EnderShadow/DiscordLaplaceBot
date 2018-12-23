@@ -9,8 +9,12 @@ import com.google.api.client.json.jackson2.JacksonFactory
 import com.google.api.client.util.store.FileDataStoreFactory
 import com.google.api.services.youtube.YouTube
 import com.google.api.services.youtube.YouTubeScopes
+import com.sedmelluq.discord.lavaplayer.player.AudioLoadResultHandler
 import com.sedmelluq.discord.lavaplayer.player.DefaultAudioPlayerManager
 import com.sedmelluq.discord.lavaplayer.source.AudioSourceManagers
+import com.sedmelluq.discord.lavaplayer.tools.FriendlyException
+import com.sedmelluq.discord.lavaplayer.track.AudioPlaylist
+import com.sedmelluq.discord.lavaplayer.track.AudioTrack
 import net.dv8tion.jda.core.AccountType
 import net.dv8tion.jda.core.JDA
 import net.dv8tion.jda.core.JDABuilder
@@ -39,6 +43,7 @@ import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.InputStream
 import java.time.LocalDateTime
+import kotlin.concurrent.thread
 
 val jsonFactory: JacksonFactory = JacksonFactory.getDefaultInstance()
 lateinit var bot: JDA
@@ -69,7 +74,6 @@ fun getYoutubeService(): YouTube
 
 fun main(args: Array<String>)
 {
-    File("logs").mkdir()
     val token = File("token").readText()
     bot = JDABuilder(AccountType.BOT)
             .setToken(token)
@@ -119,6 +123,25 @@ fun save()
     File("savedUserText.json").writeText(jsonFactory.toPrettyString(savedUserText))
 }
 
+fun saveVoiceChannelData()
+{
+    val guildMusicData = JSONArray(joinedGuilds.values.filter {it.musicManager.player.playingTrack != null}.map {guildInfo ->
+        val guildJson = JSONObject()
+        val musicManager = guildInfo.musicManager
+        
+        guildJson.put("guildId", guildInfo.guild.id)
+        guildJson.put("volume", musicManager.player.volume)
+        guildJson.put("currentChannel", guildInfo.guild.audioManager.connectedChannel.id)
+        guildJson.put("currentSong", musicManager.player.playingTrack.info.uri)
+        guildJson.put("position", musicManager.player.playingTrack.position)
+        guildJson.put("queue", musicManager.scheduler.queueURIs)
+        
+        guildJson
+    })
+    
+    File("guildMusicData.json").writeText(guildMusicData.toString())
+}
+
 fun clearWelcomeReactionsBy(guild: Guild, user: User)
 {
     joinedGuilds[guild]!!.welcomeChannel?.iterableHistory?.forEach {it.reactions.forEach {it.removeReaction(user).queue()}}
@@ -144,25 +167,70 @@ class UtilityListener: ListenerAdapter()
             val guild = event.jda.getGuildById(guildData.getString("id"))
             if(guild != null)
             {
-                val guildInfo = joinedGuilds[guild]!!
-                guildInfo.serverAdminRoles.addAll(guildData.getJSONArray("adminRoles").mapNotNull {guildInfo.guild.getRoleById(it as String)})
-                guildInfo.initialRole = guildData.getStringOrNull("initialRole")?.let {guildInfo.guild.getRoleById(it)}
-                guildInfo.rulesChannel = guildData.getStringOrNull("rulesChannel")?.let {guildInfo.guild.getTextChannelById(it)}
-                guildInfo.welcomeMessageChannel = guildData.getStringOrNull("welcomeMessageChannel")?.let {guildInfo.guild.getTextChannelById(it)}
-                guildInfo.userLeaveChannel = guildData.getStringOrNull("userLeaveChannel")?.let {guildInfo.guild.getTextChannelById(it)}
-                guildInfo.userBannedChannel = guildData.getStringOrNull("userBannedChannel")?.let {guildInfo.guild.getTextChannelById(it)}
-                guildInfo.botLogChannel = guildData.getStringOrNull("botLogChannel")?.let {guildInfo.guild.getTextChannelById(it)}
-                guildInfo.musicChannel = guildData.getStringOrNull("musicChannel")?.let {guildInfo.guild.getTextChannelById(it)}
-                guildInfo.welcomeChannel = guildData.getStringOrNull("welcomeChannel")?.let {guildInfo.guild.getTextChannelById(it)}
-                @Suppress("UNCHECKED_CAST")
-                guildInfo.disabledCommands.addAll(guildData.getJSONArray("disabledCommands").toList() as List<String>)
-                guildInfo.blockedUsers.addAll(guildData.getJSONArray("blockedUsers").map {event.jda.getUserById(it as String)})
-                guildInfo.volume = guildData.getInt("volume")
-                @Suppress("UNCHECKED_CAST")
-                guildInfo.volumeMultipliers.putAll(guildData.getJSONObject("volumeMultipliers").toMap() as Map<String, Double>)
-                guildInfo.funStuff = guildData.getBoolean("funStuff")
-                guildInfo.displayDeleted = guildData.getBoolean("displayDeleted")
-                guildInfo.displayModified = guildData.getBoolean("displayModified")
+                val guildInfo = joinedGuilds[guild]
+                if(guildInfo != null)
+                {
+                    guildInfo.serverAdminRoles.addAll(guildData.getJSONArray("adminRoles").mapNotNull {guildInfo.guild.getRoleById(it as String)})
+                    guildInfo.initialRole = guildData.getStringOrNull("initialRole")?.let {guildInfo.guild.getRoleById(it)}
+                    guildInfo.rulesChannel = guildData.getStringOrNull("rulesChannel")?.let {guildInfo.guild.getTextChannelById(it)}
+                    guildInfo.welcomeMessageChannel = guildData.getStringOrNull("welcomeMessageChannel")?.let {guildInfo.guild.getTextChannelById(it)}
+                    guildInfo.userLeaveChannel = guildData.getStringOrNull("userLeaveChannel")?.let {guildInfo.guild.getTextChannelById(it)}
+                    guildInfo.userBannedChannel = guildData.getStringOrNull("userBannedChannel")?.let {guildInfo.guild.getTextChannelById(it)}
+                    guildInfo.botLogChannel = guildData.getStringOrNull("botLogChannel")?.let {guildInfo.guild.getTextChannelById(it)}
+                    guildInfo.musicChannel = guildData.getStringOrNull("musicChannel")?.let {guildInfo.guild.getTextChannelById(it)}
+                    guildInfo.welcomeChannel = guildData.getStringOrNull("welcomeChannel")?.let {guildInfo.guild.getTextChannelById(it)}
+                    @Suppress("UNCHECKED_CAST")
+                    guildInfo.disabledCommands.addAll(guildData.getJSONArray("disabledCommands").toList() as List<String>)
+                    guildInfo.blockedUsers.addAll(guildData.getJSONArray("blockedUsers").map {event.jda.getUserById(it as String)})
+                    guildInfo.volume = guildData.getInt("volume")
+                    @Suppress("UNCHECKED_CAST")
+                    guildInfo.volumeMultipliers.putAll(guildData.getJSONObject("volumeMultipliers").toMap() as Map<String, Double>)
+                    guildInfo.funStuff = guildData.getBoolean("funStuff")
+                    guildInfo.displayDeleted = guildData.getBoolean("displayDeleted")
+                    guildInfo.displayModified = guildData.getBoolean("displayModified")
+                }
+            }
+        }
+    
+        File("guildMusicData.json").takeIf {it.exists()}?.let {file ->
+            val guildMusicData = JSONArray(file.readText())
+            guildMusicData.forEach {
+                val guildJson = it as JSONObject
+                val guild = event.jda.getGuildById(guildJson.getString("guildId"))
+                if(guild != null)
+                {
+                    val musicManager = joinedGuilds[guild]?.musicManager
+                    if(musicManager != null)
+                    {
+                        musicManager.player.volume = guildJson.getInt("volume")
+                        val voiceChannel = guild.getVoiceChannelById(guildJson.getString("currentChannel"))
+                        if(voiceChannel != null)
+                        {
+                            val nopAudioResultHandler = object: AudioLoadResultHandler
+                            {
+                                override fun loadFailed(exception: FriendlyException) {}
+    
+                                override fun trackLoaded(track: AudioTrack)
+                                {
+                                    play(voiceChannel, musicManager, track)
+                                }
+    
+                                override fun noMatches() {}
+                                override fun playlistLoaded(playlist: AudioPlaylist) {}
+    
+                            }
+                            
+                            playerManager.loadItemOrdered(musicManager, guildJson.getString("currentSong"), nopAudioResultHandler)
+                            guildJson.getJSONArray("queue").forEach {playerManager.loadItemOrdered(musicManager, it as String, nopAudioResultHandler)}
+                            
+                            thread(true, true) {
+                                while(musicManager.player.playingTrack == null)
+                                    Thread.yield()
+                                musicManager.player.playingTrack.position = guildJson.getLong("position")
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -455,7 +523,7 @@ fun hashMessage(message: Message): ByteArray
 {
     val messageDigest = DigestUtils.getSha256Digest()
     messageDigest.update(message.contentRaw.toByteArray())
-    message.attachments.forEach {messageDigest.update(it.inputStream.retry(10, InputStream::toByteArray))}
+    message.attachments.forEach {messageDigest.update(retry(10) {it.inputStream.toByteArray()})}
     return messageDigest.digest()
 }
 

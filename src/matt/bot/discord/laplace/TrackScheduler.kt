@@ -19,6 +19,8 @@ class TrackScheduler
     private val queue = LinkedBlockingQueue<AudioTrack>()
     val durationSeconds
         get() = (queue.map {it.duration}.sum() + (player.playingTrack?.let {it.duration - it.position} ?: 0)) / 1000.0
+    val queueURIs
+        get() = queue.map {it.info.uri}
     
     /**
      * Add the next track to queue or play right away if nothing is in the queue.

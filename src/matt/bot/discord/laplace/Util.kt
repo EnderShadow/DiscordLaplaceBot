@@ -13,12 +13,14 @@ fun isServerAdmin(member: Member) = member.isOwner || member.roles.intersect(joi
 fun reloadBot(bot: JDA)
 {
     shutdownMode = ExitMode.RELOAD
+    saveVoiceChannelData()
     bot.shutdown()
 }
 
 fun shutdownBot(bot: JDA)
 {
     shutdownMode = ExitMode.SHUTDOWN
+    saveVoiceChannelData()
     bot.shutdown()
 }
 
@@ -68,7 +70,7 @@ inline fun <reified T, reified U> Collection<T>.splitAndMap(filter: (T) -> Boole
 
 fun JSONObject.getStringOrNull(key: String) = if(isNull(key)) null else getString(key)
 
-inline fun <reified T, reified R> T.retry(amt: Int, provider: (T) -> R): R
+inline fun <reified T> retry(amt: Int, provider: () -> T): T
 {
     if(amt <= 0)
     {
@@ -76,7 +78,7 @@ inline fun <reified T, reified R> T.retry(amt: Int, provider: (T) -> R): R
         {
             try
             {
-                return provider(this)
+                return provider()
             }
             catch(_: Throwable) {}
         }
@@ -87,7 +89,7 @@ inline fun <reified T, reified R> T.retry(amt: Int, provider: (T) -> R): R
         {
             try
             {
-                return provider(this)
+                return provider()
             }
             catch(t: Throwable)
             {
