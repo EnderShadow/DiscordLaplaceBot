@@ -162,8 +162,24 @@ fun commandLine(bot: JDA)
                     val musicManager = joinedGuilds[selectedGuild!!]!!.musicManager
                     if(tokenizer.hasNext())
                     {
-                        val uri = File(tokenizer.remainingTextAsToken.tokenValue).run {if(exists()) toURI() else null} ?: URI(tokenizer.remainingTextAsToken.tokenValue)
-                        playerManager.loadItemOrdered(musicManager, uri.toString(), object : AudioLoadResultHandler
+                        var trackUrl = tokenizer.remainingTextAsToken.tokenValue
+                        if(!urlRegex.matches(trackUrl))
+                        {
+                            val searchRequest = youtube.search().list("snippet")
+                            searchRequest.maxResults = 10
+                            searchRequest.q = trackUrl
+                            searchRequest.type = "video"
+                            val response = searchRequest.execute()
+                            if(response.items.isNotEmpty())
+                            {
+                                trackUrl = "$youtubeBaseUrl${response.items[0].id.videoId}"
+                            }
+                            else
+                            {
+                                return
+                            }
+                        }
+                        playerManager.loadItemOrdered(musicManager, trackUrl, object : AudioLoadResultHandler
                         {
                             override fun loadFailed(exception: FriendlyException)
                             {

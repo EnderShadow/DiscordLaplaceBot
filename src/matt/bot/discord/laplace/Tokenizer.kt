@@ -9,6 +9,7 @@ fun toToken(botPrefix: String, textUnit: String): Token
     {
         textUnit.startsWith(botPrefix) -> Token(TokenType.COMMAND, textUnit.substring(botPrefix.length), textUnit)
         textUnit.matches(Regex("<@[0-9]+>")) -> Token(TokenType.USER, textUnit.substring(2, textUnit.length - 1), textUnit)
+        textUnit.matches(Regex("<@![0-9]+>")) -> Token(TokenType.USER, textUnit.substring(3, textUnit.length - 1), textUnit)
         textUnit.matches(Regex("<@&[0-9]+>")) -> Token(TokenType.ROLE, textUnit.substring(3, textUnit.length - 1), textUnit)
         textUnit.matches(Regex("<#[0-9]+>")) -> Token(TokenType.TEXT_CHANNEL, textUnit.substring(2, textUnit.length - 1), textUnit)
         textUnit.matches(Regex("[0-9]+-[0-9]+")) -> Token(TokenType.RANGE, textUnit)

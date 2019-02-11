@@ -655,7 +655,7 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
             |
             |**Examples:**
             |`l!block yes @JoeShmoe` prevents @JoeShmoe from using the bot
-            |`l!block yes @JoeShmoe` allows @JoeShmoe to use the bot if he was previously blocked
+            |`l!block no @JoeShmoe` allows @JoeShmoe to use the bot if he was previously blocked
         """.trimMargin()
         
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
@@ -665,7 +665,7 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
                 val blockMode = tokenizer.next().tokenValue
                 if(tokenizer.hasNext())
                 {
-                    val user = tokenizer.next().objValue as User
+                    val user = tokenizer.remainingTextAsToken.objValue as User
                     if(sourceMessage.guild.getMember(user)?.isOwner == true)
                         return
                     

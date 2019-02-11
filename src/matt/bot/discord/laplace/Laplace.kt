@@ -232,6 +232,7 @@ class UtilityListener: ListenerAdapter()
                     }
                 }
             }
+            file.delete()
         }
     }
     
@@ -432,6 +433,9 @@ val spamMap = mutableMapOf<Member, Triple<ByteArray, Int, Long>>()
 fun checkForSpam(event: MessageReceivedEvent)
 {
     if(event.channelType == ChannelType.PRIVATE || event.channelType == ChannelType.GROUP || event.isWebhookMessage)
+        return
+    
+    if(event.member == event.guild.owner || event.member.roles.any {it in joinedGuilds[event.guild]!!.serverAdminRoles})
         return
     
     // Checks for users that are spamming mentions
