@@ -16,6 +16,9 @@
               <option value="$APPLICATION_PLUGINS_DIR$/Serialization/lib/kotlinx-serialization-compiler-plugin.jar" />
             </array>
           </option>
+          <option name="errors">
+            <ArgumentParseErrors />
+          </option>
         </compilerArguments>
       </configuration>
     </facet>

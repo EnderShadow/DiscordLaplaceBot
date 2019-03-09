@@ -8,18 +8,18 @@ import net.dv8tion.jda.core.MessageBuilder
 import net.dv8tion.jda.core.entities.*
 
 val urlRegex = Regex("^(https?|ftp|file)://[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*[-a-zA-Z0-9+&@#/%=~_|]")
+val pornhubUrlRegex = Regex("https?://www.pornhub.com/view_video.php\\?(.+&)*viewkey=[a-z0-9]+(&.+)*(#.*)?")
 
 fun runCommand(command: String, tokenizer: Tokenizer, sourceMessage: Message)
 {
     if(!sourceMessage.channelType.isGuild)
-        return
-    
-    if(command !in joinedGuilds[sourceMessage.guild]!!.disabledCommands)
+        Command[command].takeIf {it.allowedInPrivateChannel}?.invoke(tokenizer, sourceMessage)
+    else if(command !in joinedGuilds[sourceMessage.guild]!!.disabledCommands)
         Command[command](tokenizer, sourceMessage)
 }
 
 @Suppress("unused")
-sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
+sealed class Command(val prefix: String, val requiresAdmin: Boolean = false, val allowedInPrivateChannel: Boolean = false)
 {
     companion object
     {
@@ -38,13 +38,13 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
     abstract fun helpMessage(): String
     abstract operator fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
     
-    class NoopCommand: Command("noop")
+    class NoopCommand: Command("noop", allowedInPrivateChannel = true)
     {
         override fun helpMessage() = ""
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message) {}
     }
     
-    class WhoAmI: Command("whoami")
+    class WhoAmI: Command("whoami", allowedInPrivateChannel = true)
     {
         override fun helpMessage() = """`l!whoami` __Tells you who you are.__
             |
@@ -56,11 +56,14 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
         
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
         {
-            sourceMessage.channel.sendMessage("You are ${sourceMessage.member.effectiveName}").queue()
+            if(sourceMessage.channelType.isGuild)
+                sourceMessage.channel.sendMessage("You are ${sourceMessage.member.effectiveName}").queue()
+            else
+                sourceMessage.channel.sendMessage("You are ${sourceMessage.author.name}").queue()
         }
     }
     
-    class Saved: Command("saved")
+    class Saved: Command("saved", allowedInPrivateChannel = true)
     {
         override fun helpMessage() = """`l!saved` __Saves text so you can recall it at a later time or saves music URLs so you can play them later__
             |
@@ -128,6 +131,12 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
                 "play" -> {
                     if(!tokenizer.hasNext())
                         return
+                    
+                    if(!sourceMessage.channelType.isGuild)
+                    {
+                        sourceMessage.channel.sendMessage("Cannot play music in DMs").queue()
+                        return
+                    }
                     
                     val key = tokenizer.remainingTextAsToken.tokenValue
                     val url = savedUserText.getOrDefault(sourceMessage.author.id, null)?.getOrDefault(key, null)
@@ -373,7 +382,27 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
         }
     }
     
-    class Say: Command("say", true)
+    class RolesWithID: Command("listRolesWithIds", true)
+    {
+        override fun helpMessage() = """`l!listRolesWithIds` __Makes the bot list all roles with their id__
+            |
+            |**Usage:** l!listRolesWithIds
+            |
+            |**Examples:**
+            |`l!listRolesWithIds` makes the bot list all roles with their id
+        """.trimIndent()
+    
+        override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
+        {
+            if(isServerAdmin(sourceMessage.member))
+            {
+                val roles = sourceMessage.guild.roles.joinToString("\n") {"`${it.name.padEnd(40, ' ')} ${it.id}`"}
+                splitAt2000(roles).forEach {sourceMessage.textChannel.sendMessage(it).queue()}
+            }
+        }
+    }
+    
+    class Say: Command("say", true, true)
     {
         override fun helpMessage() = """`l!say` __Makes the bot say something__
             |
@@ -387,13 +416,22 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
         
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
         {
-            if(isServerAdmin(sourceMessage.member))
+            if(!sourceMessage.channelType.isGuild)
             {
                 var content = tokenizer.remainingTextAsToken.tokenValue
                 val tts = content.endsWith("!tts")
                 if(tts)
                     content = content.substring(0, content.length - 4).trim()
-                MessageBuilder(content).sendTo(sourceMessage.channel).tts(tts).queue()
+                sourceMessage.channel.sendMessage(content).tts(tts).queue()
+                println("${sourceMessage.author.name} made me say \"$content\" in a DM")
+            }
+            else if(isServerAdmin(sourceMessage.member))
+            {
+                var content = tokenizer.remainingTextAsToken.tokenValue
+                val tts = content.endsWith("!tts")
+                if(tts)
+                    content = content.substring(0, content.length - 4).trim()
+                sourceMessage.channel.sendMessage(content).tts(tts).queue()
                 joinedGuilds[sourceMessage.guild]!!.messageBuffer.remove(sourceMessage)
                 sourceMessage.delete().queue()
                 println("${sourceMessage.author.name} made me say \"$content\"")
@@ -770,7 +808,7 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false)
         }
     }
     
-    class Help: Command("help")
+    class Help: Command("help", allowedInPrivateChannel = true)
     {
         override fun helpMessage() = """`l!help` __Displays a list of commands. Provide a command to get its info__
             |
@@ -840,6 +878,11 @@ fun loadAndPlay(sourceMessage: Message, trackUrl: String?)
                 return
             }
         }
+        else if(pornhubUrlRegex.matches(trackUrl))
+        {
+            trackUrl = ProcessBuilder("youtube-dl", "-s", "-g", trackUrl).start().inputStream.readFullyToString().trim()
+        }
+        
         playerManager.loadItemOrdered(musicManager, trackUrl, object : AudioLoadResultHandler
         {
             /**

@@ -29,12 +29,15 @@ import net.dv8tion.jda.core.events.guild.GuildJoinEvent
 import net.dv8tion.jda.core.events.guild.GuildLeaveEvent
 import net.dv8tion.jda.core.events.guild.member.GuildMemberJoinEvent
 import net.dv8tion.jda.core.events.guild.member.GuildMemberLeaveEvent
+import net.dv8tion.jda.core.events.guild.member.GuildMemberNickChangeEvent
 import net.dv8tion.jda.core.events.guild.member.GuildMemberRoleAddEvent
+import net.dv8tion.jda.core.events.guild.update.GuildUpdateNameEvent
 import net.dv8tion.jda.core.events.message.MessageReceivedEvent
 import net.dv8tion.jda.core.events.message.guild.GuildMessageDeleteEvent
 import net.dv8tion.jda.core.events.message.guild.GuildMessageReceivedEvent
 import net.dv8tion.jda.core.events.message.guild.GuildMessageUpdateEvent
 import net.dv8tion.jda.core.events.message.guild.react.GuildMessageReactionAddEvent
+import net.dv8tion.jda.core.events.user.update.UserUpdateNameEvent
 import net.dv8tion.jda.core.hooks.ListenerAdapter
 import org.apache.commons.codec.digest.DigestUtils
 import org.json.JSONArray
@@ -43,6 +46,7 @@ import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.InputStream
 import java.time.LocalDateTime
+import java.util.jar.JarFile
 import kotlin.concurrent.thread
 
 val jsonFactory: JacksonFactory = JacksonFactory.getDefaultInstance()
@@ -79,6 +83,7 @@ fun main(args: Array<String>)
             .setToken(token)
             .addEventListener(UtilityListener(), MessageListener())
             .buildBlocking()
+    bot.addEventListener()
     
     while(true)
     {
@@ -234,6 +239,8 @@ class UtilityListener: ListenerAdapter()
             }
             file.delete()
         }
+        
+        joinedGuilds.values.forEach(::checkForMissedJoins)
     }
     
     override fun onGuildJoin(event: GuildJoinEvent)
@@ -379,11 +386,15 @@ class MessageListener: ListenerAdapter()
         if(event.author.isBot)
             return
         
-        // Spam checking
-        checkForSpam(event)
-        
-        if(event.author in joinedGuilds[event.guild]!!.blockedUsers)
-            return
+        val privateChannel = !event.channelType.isGuild
+        if(!privateChannel)
+        {
+            // Spam checking
+            checkForSpam(event)
+    
+            if(event.author in joinedGuilds[event.guild]!!.blockedUsers)
+                return
+        }
         
         val tokenizer = Tokenizer(event.message.contentRaw)
         if(!tokenizer.hasNext())
@@ -396,7 +407,7 @@ class MessageListener: ListenerAdapter()
             return
         }
         
-        if(!joinedGuilds[event.guild]!!.funStuff)
+        if(!privateChannel && !joinedGuilds[event.guild]!!.funStuff)
             return
         
         // Checks if the message is an element symbol from the periodic table of elements
@@ -406,14 +417,16 @@ class MessageListener: ListenerAdapter()
             return
         }
         
-        if(event.message.isMentioned(event.jda.selfUser) || event.channelType == ChannelType.PRIVATE)
+        if(event.message.isMentioned(event.jda.selfUser) || privateChannel)
         {
+            val isJoe = event.author.id == "212397597199958018"
+            val isAdmin = privateChannel || isServerAdmin(event.member)
             if(event.message.contentRaw.toLowerCase().matches(Regex(".*?sudo.+?make\\s+me\\s+a\\s+sandwich.*?")))
             {
-                if(Math.random() < 0.8)
-                    event.channel.sendMessage("Ok, here's a sandwich.\nhttps://i.imgur.com/dlmkz6v.jpg").queue()
-                else
+                if(isJoe || (!isAdmin && Math.random() >= 0.8))
                     event.channel.sendMessage("${event.author.asMention} is not in the sudoers file. This incident will be reported.").queue()
+                else
+                    event.channel.sendMessage("Ok, here's a sandwich.\nhttps://i.imgur.com/dlmkz6v.jpg").queue()
             }
             else if(event.message.contentRaw.toLowerCase().matches(Regex(".*?sudo.+?make\\s+me\\s+a\\s+furry\\s+sandwich.*?")))
             {
@@ -424,6 +437,17 @@ class MessageListener: ListenerAdapter()
                 event.channel.sendMessage("Go make it yourself.").queue()
             }
         }
+    }
+}
+
+fun checkForMissedJoins(guildInfo: GuildInfo)
+{
+    val guild = guildInfo.guild
+    val initialRole = guildInfo.initialRole ?: return
+    val users = guildInfo.welcomeChannel?.history?.retrievedHistory?.asSequence()?.flatMap {it.reactions.asSequence().filter {it.reactionEmote.name == "✅"}.flatMap {it.users.complete().asSequence()}} ?: return
+    users.map(guild::getMember).forEach {
+        if(initialRole !in it.roles)
+            guild.controller.addSingleRoleToMember(it, initialRole).queue()
     }
 }
 

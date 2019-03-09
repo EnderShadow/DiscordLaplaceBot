@@ -4,6 +4,8 @@ import net.dv8tion.jda.core.JDA
 import net.dv8tion.jda.core.entities.Member
 import net.dv8tion.jda.core.entities.Message
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.lang.IllegalStateException
 
 fun countMentions(message: Message) = message.mentionedChannels.size + message.mentionedRoles.size + message.mentionedUsers.size + if(message.mentionsEveryone()) 1 else 0
@@ -113,4 +115,17 @@ fun String.containsSparse(text: String): Boolean
             return false
     }
     return true
+}
+
+fun InputStream.readFullyToString(): String
+{
+    val baos = ByteArrayOutputStream()
+    val buffer = ByteArray(8192)
+    while(true)
+    {
+        val amt = this.read(buffer)
+        if(amt < 0)
+            return baos.toString()
+        baos.write(buffer, 0, amt)
+    }
 }
