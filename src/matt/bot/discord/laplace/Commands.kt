@@ -422,8 +422,15 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false, val
                 val tts = content.endsWith("!tts")
                 if(tts)
                     content = content.substring(0, content.length - 4).trim()
-                sourceMessage.channel.sendMessage(content).tts(tts).queue()
-                println("${sourceMessage.author.name} made me say \"$content\" in a DM")
+                if(content.isNotEmpty())
+                {
+                    sourceMessage.channel.sendMessage(content).tts(tts).queue()
+                    println("${sourceMessage.author.name} made me say \"$content\" in a DM")
+                }
+                else
+                {
+                    sourceMessage.channel.sendMessage("I can't say blank messages").queue()
+                }
             }
             else if(isServerAdmin(sourceMessage.member))
             {
@@ -431,10 +438,17 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false, val
                 val tts = content.endsWith("!tts")
                 if(tts)
                     content = content.substring(0, content.length - 4).trim()
-                sourceMessage.channel.sendMessage(content).tts(tts).queue()
-                joinedGuilds[sourceMessage.guild]!!.messageBuffer.remove(sourceMessage)
-                sourceMessage.delete().queue()
-                println("${sourceMessage.author.name} made me say \"$content\"")
+                if(content.isNotEmpty())
+                {
+                    sourceMessage.channel.sendMessage(content).tts(tts).queue()
+                    joinedGuilds[sourceMessage.guild]!!.messageBuffer.remove(sourceMessage)
+                    sourceMessage.delete().queue()
+                    println("${sourceMessage.author.name} made me say \"$content\"")
+                }
+                else
+                {
+                    sourceMessage.channel.sendMessage("I can't say blank messages").queue()
+                }
             }
         }
     }

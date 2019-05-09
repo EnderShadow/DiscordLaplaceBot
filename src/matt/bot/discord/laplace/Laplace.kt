@@ -63,6 +63,8 @@ val savedUserText: MutableMap<String, MutableMap<String, String>> = try {jsonFac
 val playerManager = DefaultAudioPlayerManager()
 val joinedGuilds = mutableMapOf<Guild, GuildInfo>()
 
+val loadedModules = mutableMapOf<String, JarFile>()
+
 val youtube = getYoutubeService()
 
 var shutdownMode = ExitMode.SHUTDOWN
@@ -78,6 +80,7 @@ fun getYoutubeService(): YouTube
 
 fun main(args: Array<String>)
 {
+    File("pulledMessages").deleteRecursively()
     val token = File("token").readText()
     bot = JDABuilder(AccountType.BOT)
             .setToken(token)
@@ -253,16 +256,6 @@ class UtilityListener: ListenerAdapter()
         joinedGuilds.remove(event.guild)
     }
     
-    override fun onDisconnect(event: DisconnectEvent)
-    {
-        println("[${LocalDateTime.now()}] Bot has disconnected. Attempting to reconnect")
-    }
-    
-    override fun onReconnect(event: ReconnectedEvent)
-    {
-        println("[${LocalDateTime.now()}] Bot has reconnected")
-    }
-    
     override fun onShutdown(event: ShutdownEvent)
     {
         save()
@@ -352,7 +345,7 @@ class UtilityListener: ListenerAdapter()
         if(!event.author.isBot && event.message in messageBuffer)
         {
             val oldMessage = messageBuffer.update(event.message) {msg1, msg2 -> msg1.id == msg2.id}
-            if(guildInfo.displayModified)
+            if(oldMessage.isPinned == event.message.isPinned && guildInfo.displayModified)
             {
                 splitAt2000("A message by ${event.author.name} in ${event.message.textChannel.asMention} was Edited.\nPrevious: ${oldMessage.contentRaw}\nCurrent: ${event.message.contentRaw}").forEach {
                     guildInfo.botLogChannel?.sendMessage(it)?.queue()
@@ -423,10 +416,12 @@ class MessageListener: ListenerAdapter()
             val isAdmin = privateChannel || isServerAdmin(event.member)
             if(event.message.contentRaw.toLowerCase().matches(Regex(".*?sudo.+?make\\s+me\\s+a\\s+sandwich.*?")))
             {
-                if(isJoe || (!isAdmin && Math.random() >= 0.8))
-                    event.channel.sendMessage("${event.author.asMention} is not in the sudoers file. This incident will be reported.").queue()
-                else
+                if(isJoe)
+                    event.channel.sendMessage("Ok, here's a sand witch.\nhttps://botaday.com/sites/default/files/2017-06/sand_witch-1.4-50_0.png").queue()
+                else if(isAdmin || Math.random() < 0.8)
                     event.channel.sendMessage("Ok, here's a sandwich.\nhttps://i.imgur.com/dlmkz6v.jpg").queue()
+                else
+                    event.channel.sendMessage("${event.author.asMention} is not in the sudoers file. This incident will be reported.").queue()
             }
             else if(event.message.contentRaw.toLowerCase().matches(Regex(".*?sudo.+?make\\s+me\\s+a\\s+furry\\s+sandwich.*?")))
             {
@@ -524,27 +519,10 @@ fun checkForSpam(event: MessageReceivedEvent)
 
 fun takeActionAgainstUser(member: Member, ban: Boolean, reason: String)
 {
-    if(member.guild.id == "174678310868090880")
-    {
-        val actionRole = member.guild.getRolesByName("Detention", true)[0]
-        if(actionRole !in member.roles)
-        {
-            member.guild.controller.addSingleRoleToMember(member, actionRole).queue()
-    
-            val adminRoles = member.guild.getRolesByName("Moderator", true) + member.guild.getRolesByName("Admin", true)
-            member.guild.getTextChannelById("270733523952861186").sendMessage(adminRoles.joinToString(" ", postfix = "\n${member.asMention} has been detected spamming and was given ${actionRole.asMention}") {it.asMention}).queue()
-            
-            val detentionChannel = member.guild.getTextChannelById("390301025384529921")
-            detentionChannel.sendMessage("${member.asMention} You have been put in detention because you are suspected of spamming. If this is a mistake then an admin or mod will be along shortly to fix it. If not, make your appeal here. You will be unable to post in other channels until this is resolved.").queue()
-        }
-    }
+    if(ban)
+        member.guild.controller.ban(member, 1, reason).queue()
     else
-    {
-        if(ban)
-            member.guild.controller.ban(member, 1, reason).queue()
-        else
-            member.guild.controller.kick(member, reason).queue()
-    }
+        member.guild.controller.kick(member, reason).queue()
 }
 
 fun hashMessage(message: Message): ByteArray

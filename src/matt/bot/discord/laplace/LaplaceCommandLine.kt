@@ -7,6 +7,7 @@ import com.sedmelluq.discord.lavaplayer.track.AudioTrack
 import net.dv8tion.jda.core.JDA
 import net.dv8tion.jda.core.MessageBuilder
 import net.dv8tion.jda.core.entities.*
+import net.dv8tion.jda.core.exceptions.ErrorResponseException
 import net.dv8tion.jda.core.requests.Request
 import net.dv8tion.jda.core.requests.RequestFuture
 import net.dv8tion.jda.core.requests.Response
@@ -45,6 +46,7 @@ fun commandLine(bot: JDA)
         {
             "shutdown" -> shutdownBot(bot)
             "reload" -> reloadBot(bot)
+            "ping" -> println("pong")
             "selectedGuild" -> println(selectedGuild?.name)
             "selectedTextChannel" -> println(selectedTextChannel?.name)
             "selectedVoiceChannel" -> println(selectedVoiceChannel?.name)
@@ -235,8 +237,67 @@ fun commandLine(bot: JDA)
                 else
                     runCommand(tokenizer.next().tokenValue, tokenizer, CommandLineMessage(selectedGuild!!, selectedMember, selectedTextChannel, line))
             }
+            "pullMessage" -> {
+                if(!tokenizer.hasNext())
+                {
+                    println("You need to enter a message ID")
+                }
+                else
+                {
+                    val id = tokenizer.next().tokenValue
+                    val message = getMessage(id)
+                    if(message != null)
+                    {
+                        val messageFile = File("pulledMessages/$id")
+                        messageFile.parentFile.mkdirs()
+                        messageFile.writeText(message.contentRaw)
+                        println("Seccessfully pulled message")
+                    }
+                    else
+                    {
+                        println("Cannot find message")
+                    }
+                }
+            }
+            "pushMessage" -> {
+                if(!tokenizer.hasNext())
+                {
+                    println("You need to enter a message ID")
+                }
+                else
+                {
+                    val id = tokenizer.next().tokenValue
+                    val message = getMessage(id)
+                    val messageFile = File("pulledMessages/$id")
+                    if(message != null && message.author == bot.selfUser && messageFile.exists())
+                    {
+                        message.editMessage(messageFile.readText()).complete()
+                        messageFile.delete()
+                        messageFile.parentFile.takeIf {it.list()?.isEmpty() == true}?.delete()
+                        println("Successfully pushed message")
+                    }
+                    else
+                    {
+                        println("Either the message doesn't exist, you are not the author of this message, or you haven't pulled the message yet")
+                    }
+                }
+            }
         }
     }
+}
+
+private fun getMessage(id: String): Message?
+{
+    return bot.textChannels.asSequence().map {
+        try
+        {
+            it.getMessageById(id).complete()
+        }
+        catch(e: Exception)
+        {
+            null
+        }
+    }.filterNotNull().firstOrNull()
 }
 
 private class CommandLineMessage(private val guild: Guild, private val member: Member?, private val textChannel: TextChannel?, private val text: String): Message
