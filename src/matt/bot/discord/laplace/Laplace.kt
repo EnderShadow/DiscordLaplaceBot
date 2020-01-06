@@ -15,37 +15,36 @@ import com.sedmelluq.discord.lavaplayer.source.AudioSourceManagers
 import com.sedmelluq.discord.lavaplayer.tools.FriendlyException
 import com.sedmelluq.discord.lavaplayer.track.AudioPlaylist
 import com.sedmelluq.discord.lavaplayer.track.AudioTrack
-import net.dv8tion.jda.core.AccountType
-import net.dv8tion.jda.core.JDA
-import net.dv8tion.jda.core.JDABuilder
-import net.dv8tion.jda.core.MessageBuilder
-import net.dv8tion.jda.core.entities.*
-import net.dv8tion.jda.core.events.DisconnectEvent
-import net.dv8tion.jda.core.events.ReadyEvent
-import net.dv8tion.jda.core.events.ReconnectedEvent
-import net.dv8tion.jda.core.events.ShutdownEvent
-import net.dv8tion.jda.core.events.guild.GuildBanEvent
-import net.dv8tion.jda.core.events.guild.GuildJoinEvent
-import net.dv8tion.jda.core.events.guild.GuildLeaveEvent
-import net.dv8tion.jda.core.events.guild.member.GuildMemberJoinEvent
-import net.dv8tion.jda.core.events.guild.member.GuildMemberLeaveEvent
-import net.dv8tion.jda.core.events.guild.member.GuildMemberNickChangeEvent
-import net.dv8tion.jda.core.events.guild.member.GuildMemberRoleAddEvent
-import net.dv8tion.jda.core.events.guild.update.GuildUpdateNameEvent
-import net.dv8tion.jda.core.events.message.MessageReceivedEvent
-import net.dv8tion.jda.core.events.message.guild.GuildMessageDeleteEvent
-import net.dv8tion.jda.core.events.message.guild.GuildMessageReceivedEvent
-import net.dv8tion.jda.core.events.message.guild.GuildMessageUpdateEvent
-import net.dv8tion.jda.core.events.message.guild.react.GuildMessageReactionAddEvent
-import net.dv8tion.jda.core.events.user.update.UserUpdateNameEvent
-import net.dv8tion.jda.core.hooks.ListenerAdapter
+import net.dv8tion.jda.api.AccountType
+import net.dv8tion.jda.api.JDA
+import net.dv8tion.jda.api.JDABuilder
+import net.dv8tion.jda.api.MessageBuilder
+import net.dv8tion.jda.api.entities.*
+import net.dv8tion.jda.api.events.DisconnectEvent
+import net.dv8tion.jda.api.events.ReadyEvent
+import net.dv8tion.jda.api.events.ReconnectedEvent
+import net.dv8tion.jda.api.events.ShutdownEvent
+import net.dv8tion.jda.api.events.guild.GuildBanEvent
+import net.dv8tion.jda.api.events.guild.GuildJoinEvent
+import net.dv8tion.jda.api.events.guild.GuildLeaveEvent
+import net.dv8tion.jda.api.events.guild.member.GuildMemberJoinEvent
+import net.dv8tion.jda.api.events.guild.member.GuildMemberLeaveEvent
+import net.dv8tion.jda.api.events.guild.member.update.GuildMemberUpdateNicknameEvent
+import net.dv8tion.jda.api.events.guild.member.GuildMemberRoleAddEvent
+import net.dv8tion.jda.api.events.guild.update.GuildUpdateNameEvent
+import net.dv8tion.jda.api.events.message.MessageReceivedEvent
+import net.dv8tion.jda.api.events.message.guild.GuildMessageDeleteEvent
+import net.dv8tion.jda.api.events.message.guild.GuildMessageReceivedEvent
+import net.dv8tion.jda.api.events.message.guild.GuildMessageUpdateEvent
+import net.dv8tion.jda.api.events.message.guild.react.GuildMessageReactionAddEvent
+import net.dv8tion.jda.api.events.user.update.UserUpdateNameEvent
+import net.dv8tion.jda.api.hooks.ListenerAdapter
 import org.apache.commons.codec.digest.DigestUtils
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.InputStream
-import java.time.LocalDateTime
 import java.util.jar.JarFile
 import kotlin.concurrent.thread
 
@@ -84,8 +83,8 @@ fun main(args: Array<String>)
     val token = File("token").readText()
     bot = JDABuilder(AccountType.BOT)
             .setToken(token)
-            .addEventListener(UtilityListener(), MessageListener())
-            .buildBlocking()
+            .addEventListeners(UtilityListener(), MessageListener())
+            .build()
     bot.addEventListener()
     
     while(true)
@@ -139,7 +138,7 @@ fun saveVoiceChannelData()
         
         guildJson.put("guildId", guildInfo.guild.id)
         guildJson.put("volume", musicManager.player.volume)
-        guildJson.put("currentChannel", guildInfo.guild.audioManager.connectedChannel.id)
+        guildJson.put("currentChannel", guildInfo.guild.audioManager.connectedChannel?.id)
         guildJson.put("currentSong", musicManager.player.playingTrack.info.uri)
         guildJson.put("position", musicManager.player.playingTrack.position)
         guildJson.put("queue", musicManager.scheduler.queueURIs)
@@ -189,7 +188,7 @@ class UtilityListener: ListenerAdapter()
                     guildInfo.welcomeChannel = guildData.getStringOrNull("welcomeChannel")?.let {guildInfo.guild.getTextChannelById(it)}
                     @Suppress("UNCHECKED_CAST")
                     guildInfo.disabledCommands.addAll(guildData.getJSONArray("disabledCommands").toList() as List<String>)
-                    guildInfo.blockedUsers.addAll(guildData.getJSONArray("blockedUsers").map {event.jda.getUserById(it as String)})
+                    guildInfo.blockedUsers.addAll(guildData.getJSONArray("blockedUsers").mapNotNull {event.jda.getUserById(it as String)})
                     guildInfo.volume = guildData.getInt("volume")
                     @Suppress("UNCHECKED_CAST")
                     guildInfo.volumeMultipliers.putAll(guildData.getJSONObject("volumeMultipliers").toMap() as Map<String, Double>)
@@ -288,7 +287,7 @@ class UtilityListener: ListenerAdapter()
         clearWelcomeReactionsBy(event.guild, event.user)
         
         // Remove invites created by bots that join and then leave.
-        event.guild.invites.queue {
+        event.guild.retrieveInvites().queue {
             it.forEach {invite ->
                 if(invite.inviter?.name.isNullOrBlank())
                 {
@@ -321,12 +320,12 @@ class UtilityListener: ListenerAdapter()
         //val deleteTime = lastDeletionEvent.creationTime.toLocalDateTime()
         val message = messages.first()
         
-        if(message.contentRaw.isNotBlank() && event.guild.banList.complete().none {it.user == message.author})
-        {
-            if(guildInfo.displayDeleted)
-            {
-                splitAt2000("A message by ${message.author.name} in ${message.textChannel.asMention} was deleted. It's contents were:\n\n${message.contentRaw}").forEach {
-                    guildInfo.botLogChannel?.sendMessage(it)?.queue()
+        if(message.contentRaw.isNotBlank()) {
+            event.guild.retrieveBan(message.author).queue({}) {
+                if(guildInfo.displayDeleted) {
+                    splitAt2000("A message by ${message.author.name} in ${message.textChannel.asMention} was deleted. It's contents were:\n\n${message.contentRaw}").forEach {
+                        guildInfo.botLogChannel?.sendMessage(it)?.queue()
+                    }
                 }
             }
         }
@@ -360,7 +359,7 @@ class UtilityListener: ListenerAdapter()
         {
             val role = joinedGuilds[event.guild]!!.initialRole
             if(role != null)
-                event.guild.controller.addSingleRoleToMember(event.member, role).queue()
+                event.guild.addRoleToMember(event.member, role).queue()
         }
     }
     
@@ -413,7 +412,7 @@ class MessageListener: ListenerAdapter()
         if(event.message.isMentioned(event.jda.selfUser) || privateChannel)
         {
             val isJoe = event.author.id == "212397597199958018"
-            val isAdmin = privateChannel || isServerAdmin(event.member)
+            val isAdmin = privateChannel || isServerAdmin(event.member!!)
             if(event.message.contentRaw.toLowerCase().matches(Regex(".*?sudo.+?make\\s+me\\s+a\\s+sandwich.*?")))
             {
                 if(isJoe)
@@ -439,10 +438,10 @@ fun checkForMissedJoins(guildInfo: GuildInfo)
 {
     val guild = guildInfo.guild
     val initialRole = guildInfo.initialRole ?: return
-    val users = guildInfo.welcomeChannel?.history?.retrievedHistory?.asSequence()?.flatMap {it.reactions.asSequence().filter {it.reactionEmote.name == "✅"}.flatMap {it.users.complete().asSequence()}} ?: return
+    val users = guildInfo.welcomeChannel?.history?.retrievedHistory?.asSequence()?.flatMap {it.reactions.asSequence().filter {it.reactionEmote.name == "✅"}.flatMap {it.retrieveUsers().complete().asSequence()}} ?: return
     users.map(guild::getMember).forEach {
-        if(initialRole !in it.roles)
-            guild.controller.addSingleRoleToMember(it, initialRole).queue()
+        if(initialRole !in it!!.roles)
+            guild.addRoleToMember(it, initialRole).queue()
     }
 }
 
@@ -454,13 +453,13 @@ fun checkForSpam(event: MessageReceivedEvent)
     if(event.channelType == ChannelType.PRIVATE || event.channelType == ChannelType.GROUP || event.isWebhookMessage)
         return
     
-    if(event.member == event.guild.owner || event.member.roles.any {it in joinedGuilds[event.guild]!!.serverAdminRoles})
+    if(event.member == event.guild.owner || event.member!!.roles.any {it in joinedGuilds[event.guild]!!.serverAdminRoles})
         return
     
     // Checks for users that are spamming mentions
     if(countMentions(event.message) >= 5 || event.message.mentionsEveryone())
     {
-        var (count, lastSpamTime) = mentionSpammers.getOrDefault(event.member, Pair(0, 0L))
+        var (count, lastSpamTime) = mentionSpammers.getOrDefault(event.member!!, Pair(0, 0L))
         val timeDiff = System.currentTimeMillis() - lastSpamTime
         if(timeDiff < 10_000)
             count += 1
@@ -470,8 +469,8 @@ fun checkForSpam(event: MessageReceivedEvent)
         // bans the user if they spammed mentions for a fifth (or more) time within the last 10 seconds
         if(count >= 5)
         {
-            takeActionAgainstUser(event.member, true, "Spamming mentions")
-            mentionSpammers.remove(event.member)
+            takeActionAgainstUser(event.member!!, true, "Spamming mentions")
+            mentionSpammers.remove(event.member!!)
         }
         else
         {
@@ -480,15 +479,15 @@ fun checkForSpam(event: MessageReceivedEvent)
                 if(System.currentTimeMillis() - value.second > 10_000)
                     mentionSpammers.remove(key)
             }
-            mentionSpammers[event.member] = Pair(count, System.currentTimeMillis())
+            mentionSpammers[event.member!!] = Pair(count, System.currentTimeMillis())
         }
     }
     
     // Checks for users that are spamming the same stuff over and over again
-    val messageInfo = spamMap[event.member]
+    val messageInfo = spamMap[event.member!!]
     if(messageInfo == null)
     {
-        spamMap[event.member] = Triple(hashMessage(event.message), 1, System.currentTimeMillis())
+        spamMap[event.member!!] = Triple(hashMessage(event.message), 1, System.currentTimeMillis())
     }
     else
     {
@@ -498,17 +497,17 @@ fun checkForSpam(event: MessageReceivedEvent)
             if(messageInfo.second == 9)
             {
                 // This message makes it the 10th
-                takeActionAgainstUser(event.member, true, "Spamming")
-                spamMap.remove(event.member)
+                takeActionAgainstUser(event.member!!, true, "Spamming")
+                spamMap.remove(event.member!!)
             }
             else
             {
-                spamMap[event.member] = Triple(messageHash, messageInfo.second + 1, System.currentTimeMillis())
+                spamMap[event.member!!] = Triple(messageHash, messageInfo.second + 1, System.currentTimeMillis())
             }
         }
         else
         {
-            spamMap[event.member] = Triple(hashMessage(event.message), 1, System.currentTimeMillis())
+            spamMap[event.member!!] = Triple(hashMessage(event.message), 1, System.currentTimeMillis())
             spamMap.entries.toList().forEach {(key, value) ->
                 if(System.currentTimeMillis() - value.third > 5_000)
                     spamMap.remove(key)
@@ -520,16 +519,16 @@ fun checkForSpam(event: MessageReceivedEvent)
 fun takeActionAgainstUser(member: Member, ban: Boolean, reason: String)
 {
     if(ban)
-        member.guild.controller.ban(member, 1, reason).queue()
+        member.guild.ban(member, 1, reason).queue()
     else
-        member.guild.controller.kick(member, reason).queue()
+        member.guild.kick(member, reason).queue()
 }
 
 fun hashMessage(message: Message): ByteArray
 {
     val messageDigest = DigestUtils.getSha256Digest()
     messageDigest.update(message.contentRaw.toByteArray())
-    message.attachments.forEach {messageDigest.update(retry(10) {it.inputStream.toByteArray()})}
+    message.attachments.forEach {messageDigest.update(retry(10) {it.retrieveInputStream().get().toByteArray()})}
     return messageDigest.digest()
 }
 

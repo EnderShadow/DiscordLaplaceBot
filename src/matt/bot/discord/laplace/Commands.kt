@@ -4,8 +4,8 @@ import com.sedmelluq.discord.lavaplayer.player.AudioLoadResultHandler
 import com.sedmelluq.discord.lavaplayer.tools.FriendlyException
 import com.sedmelluq.discord.lavaplayer.track.AudioPlaylist
 import com.sedmelluq.discord.lavaplayer.track.AudioTrack
-import net.dv8tion.jda.core.MessageBuilder
-import net.dv8tion.jda.core.entities.*
+import net.dv8tion.jda.api.MessageBuilder
+import net.dv8tion.jda.api.entities.*
 
 val urlRegex = Regex("^(https?|ftp|file)://[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*[-a-zA-Z0-9+&@#/%=~_|]")
 val pornhubUrlRegex = Regex("https?://www.pornhub.com/view_video.php\\?(.+&)*viewkey=[a-z0-9]+(&.+)*(#.*)?")
@@ -57,7 +57,7 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false, val
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
         {
             if(sourceMessage.channelType.isGuild)
-                sourceMessage.channel.sendMessage("You are ${sourceMessage.member.effectiveName}").queue()
+                sourceMessage.channel.sendMessage("You are ${sourceMessage.member!!.effectiveName}").queue()
             else
                 sourceMessage.channel.sendMessage("You are ${sourceMessage.author.name}").queue()
         }
@@ -394,7 +394,7 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false, val
     
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
         {
-            if(isServerAdmin(sourceMessage.member))
+            if(isServerAdmin(sourceMessage.member!!))
             {
                 val roles = sourceMessage.guild.roles.joinToString("\n") {"`${it.name.padEnd(40, ' ')} ${it.id}`"}
                 splitAt2000(roles).forEach {sourceMessage.textChannel.sendMessage(it).queue()}
@@ -432,7 +432,7 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false, val
                     sourceMessage.channel.sendMessage("I can't say blank messages").queue()
                 }
             }
-            else if(isServerAdmin(sourceMessage.member))
+            else if(isServerAdmin(sourceMessage.member!!))
             {
                 var content = tokenizer.remainingTextAsToken.tokenValue
                 val tts = content.endsWith("!tts")
@@ -469,7 +469,7 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false, val
         
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
         {
-            if(isServerAdmin(sourceMessage.member))
+            if(isServerAdmin(sourceMessage.member!!))
             {
                 if(tokenizer.hasNext())
                 {
@@ -514,7 +514,7 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false, val
         
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
         {
-            if(isServerAdmin(sourceMessage.member) && tokenizer.hasNext())
+            if(isServerAdmin(sourceMessage.member!!) && tokenizer.hasNext())
             {
                 val channelMode = tokenizer.next().tokenValue
                 
@@ -599,7 +599,7 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false, val
         
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
         {
-            if(isServerAdmin(sourceMessage.member) && tokenizer.hasNext())
+            if(isServerAdmin(sourceMessage.member!!) && tokenizer.hasNext())
             {
                 val adminMode = tokenizer.next().tokenValue
                 when(adminMode)
@@ -613,12 +613,12 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false, val
                     "add" -> {
                         if(tokenizer.hasNext())
                         {
-                            joinedGuilds[sourceMessage.guild]!!.serverAdminRoles.addAll(tokenizer.asSequence().filter {it.tokenType == TokenType.ROLE}.map {sourceMessage.guild.getRoleById(it.tokenValue)})
+                            joinedGuilds[sourceMessage.guild]!!.serverAdminRoles.addAll(tokenizer.asSequence().filter {it.tokenType == TokenType.ROLE}.mapNotNull {sourceMessage.guild.getRoleById(it.tokenValue)})
                             save()
                         }
                     }
                     "remove" -> {
-                        if(joinedGuilds[sourceMessage.guild]!!.serverAdminRoles.removeAll(tokenizer.asSequence().filter {it.tokenType == TokenType.ROLE}.map {sourceMessage.guild.getRoleById(it.tokenValue)}))
+                        if(joinedGuilds[sourceMessage.guild]!!.serverAdminRoles.removeAll(tokenizer.asSequence().filter {it.tokenType == TokenType.ROLE}.mapNotNull {sourceMessage.guild.getRoleById(it.tokenValue)}))
                             save()
                     }
                 }
@@ -645,7 +645,7 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false, val
         @Suppress("NAME_SHADOWING")
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
         {
-            if(isServerAdmin(sourceMessage.member) && tokenizer.hasNext())
+            if(isServerAdmin(sourceMessage.member!!) && tokenizer.hasNext())
             {
                 val mode = tokenizer.next().tokenValue
                 val command = tokenizer.remainingTextAsToken.tokenValue
@@ -712,7 +712,7 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false, val
         
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
         {
-            if(isServerAdmin(sourceMessage.member) && tokenizer.hasNext())
+            if(isServerAdmin(sourceMessage.member!!) && tokenizer.hasNext())
             {
                 val blockMode = tokenizer.next().tokenValue
                 if(tokenizer.hasNext())
@@ -753,7 +753,7 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false, val
         
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
         {
-            if(isServerAdmin(sourceMessage.member))
+            if(isServerAdmin(sourceMessage.member!!))
             {
                 if(tokenizer.hasNext())
                 {
@@ -785,7 +785,7 @@ sealed class Command(val prefix: String, val requiresAdmin: Boolean = false, val
     
         override fun invoke(tokenizer: Tokenizer, sourceMessage: Message)
         {
-            if(isServerAdmin(sourceMessage.member))
+            if(isServerAdmin(sourceMessage.member!!))
             {
                 if(tokenizer.hasNext())
                 {
@@ -865,7 +865,7 @@ fun loadAndPlay(sourceMessage: Message, trackUrl: String?)
     val musicManager = joinedGuilds[sourceMessage.guild]!!.musicManager
     val musicChannel = joinedGuilds[sourceMessage.guild]!!.musicChannel
     
-    if(sourceMessage.member.voiceState.channel == null)
+    if(sourceMessage.member!!.voiceState!!.channel == null)
     {
         sourceMessage.channel.sendMessage("You need to be in a voice channel to play music").queue()
         return
@@ -895,6 +895,8 @@ fun loadAndPlay(sourceMessage: Message, trackUrl: String?)
         else if(pornhubUrlRegex.matches(trackUrl))
         {
             trackUrl = ProcessBuilder("youtube-dl", "-s", "-g", trackUrl).start().inputStream.readFullyToString().trim()
+            if('\n' in trackUrl)
+                trackUrl = trackUrl.split("\n")[0]
         }
         
         playerManager.loadItemOrdered(musicManager, trackUrl, object : AudioLoadResultHandler
@@ -915,7 +917,7 @@ fun loadAndPlay(sourceMessage: Message, trackUrl: String?)
             override fun trackLoaded(track: AudioTrack)
             {
                 musicChannel?.sendMessage("Adding to queue: ${track.info.title}")?.queue()
-                play(sourceMessage.member.voiceState.channel, musicManager, track)
+                play(sourceMessage.member!!.voiceState!!.channel!!, musicManager, track)
             }
             
             /**
@@ -944,7 +946,7 @@ fun loadAndPlay(sourceMessage: Message, trackUrl: String?)
                 else
                 {
                     musicChannel?.sendMessage("Adding to queue ${playlist.name}")?.queue()
-                    playlist.tracks.forEach {play(sourceMessage.member.voiceState.channel, musicManager, it)}
+                    playlist.tracks.forEach {play(sourceMessage.member!!.voiceState!!.channel!!, musicManager, it)}
                 }
             }
         })

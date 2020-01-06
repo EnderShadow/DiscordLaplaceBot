@@ -2,8 +2,10 @@ package matt.bot.discord.laplace
 
 import com.sedmelluq.discord.lavaplayer.player.AudioPlayer
 import com.sedmelluq.discord.lavaplayer.track.playback.AudioFrame
-import net.dv8tion.jda.core.audio.AudioSendHandler
-import net.dv8tion.jda.core.entities.Guild
+import com.sedmelluq.discord.lavaplayer.track.playback.MutableAudioFrame
+import net.dv8tion.jda.api.audio.AudioSendHandler
+import net.dv8tion.jda.api.entities.Guild
+import java.nio.ByteBuffer
 import java.util.*
 import kotlin.concurrent.schedule
 
@@ -18,36 +20,26 @@ class AudioPlayerSendHandler
  */
 (private val guild: Guild, private val audioPlayer: AudioPlayer) : AudioSendHandler
 {
-    private var lastFrame: AudioFrame? = null
+    private var frame = MutableAudioFrame()
+    private var buffer = ByteBuffer.allocate(1024)
     private var timer = Timer("autoDisconnectTimer", true)
     private var lastTask: TimerTask? = null
     
-    override fun canProvide(): Boolean
-    {
-        if(lastFrame == null)
-        {
-            lastFrame = audioPlayer.provide()
-        }
-        
-        return lastFrame != null
+    init {
+        frame.setBuffer(buffer)
     }
     
-    override fun provide20MsAudio(): ByteArray?
+    override fun canProvide() = audioPlayer.provide(frame)
+    
+    override fun provide20MsAudio(): ByteBuffer?
     {
         lastTask?.cancel()
         lastTask = timer.schedule(300_000) {
             guild.audioManager.closeAudioConnection()
         }
         
-        if(lastFrame == null)
-        {
-            lastFrame = audioPlayer.provide()
-        }
-        
-        val data = lastFrame?.data
-        lastFrame = null
-        
-        return data
+        buffer.flip()
+        return buffer
     }
     
     override fun isOpus(): Boolean

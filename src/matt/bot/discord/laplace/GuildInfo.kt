@@ -1,6 +1,6 @@
 package matt.bot.discord.laplace
 
-import net.dv8tion.jda.core.entities.*
+import net.dv8tion.jda.api.entities.*
 
 class GuildInfo(val guild: Guild, serverAdminRoles: List<Role> = emptyList(), var initialRole: Role? = null, var rulesChannel: TextChannel? = null,
                 var welcomeMessageChannel: TextChannel? = guild.defaultChannel, var userLeaveChannel: TextChannel? = guild.defaultChannel,

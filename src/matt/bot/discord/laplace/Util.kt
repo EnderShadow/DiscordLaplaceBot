@@ -1,8 +1,8 @@
 package matt.bot.discord.laplace
 
-import net.dv8tion.jda.core.JDA
-import net.dv8tion.jda.core.entities.Member
-import net.dv8tion.jda.core.entities.Message
+import net.dv8tion.jda.api.JDA
+import net.dv8tion.jda.api.entities.Member
+import net.dv8tion.jda.api.entities.Message
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
